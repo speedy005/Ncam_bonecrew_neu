@@ -10,20 +10,21 @@
 #include "module-dvbapi-mca.h"
 #include "module-dvbapi-coolapi.h"
 #include "module-dvbapi-stapi.h"
+#include "module-dvbapi-gxapi.h"
 #include "module-dvbapi-chancache.h"
 #include "module-stat.h"
 #include "module-streamrelay.h"
-#include "oscam-chk.h"
-#include "oscam-client.h"
-#include "oscam-config.h"
-#include "oscam-ecm.h"
-#include "oscam-emm.h"
-#include "oscam-files.h"
-#include "oscam-net.h"
-#include "oscam-reader.h"
-#include "oscam-string.h"
-#include "oscam-time.h"
-#include "oscam-work.h"
+#include "ncam-chk.h"
+#include "ncam-client.h"
+#include "ncam-config.h"
+#include "ncam-ecm.h"
+#include "ncam-emm.h"
+#include "ncam-files.h"
+#include "ncam-net.h"
+#include "ncam-reader.h"
+#include "ncam-string.h"
+#include "ncam-time.h"
+#include "ncam-work.h"
 #include "reader-irdeto.h"
 #include "cscrypt/md5.h"
 extern int32_t exit_oscam;
@@ -332,7 +333,7 @@ static int dvbapi_ioctl(int fd, uint32_t request, ...)
 	}
 #endif
 	// FIXME: Workaround for su980 bug
-	// See: https://board.streamboard.tv/?postid=533940
+	// See: http://www.streamboard.tv/wbb2/thread.php?postid=533940
 	if(boxtype_is("su980"))
 	{
 		ret = 1;
@@ -372,12 +373,15 @@ static const struct box_devices devices[BOX_COUNT] =
 	/* sh4      (stapi)*/       { "/dev/stapi/",           "stpti4_ioctl", "stpti4_ioctl", "/tmp/camd.socket", STAPI    },
 #endif
 	/* coolstream*/             { "/dev/cnxt/",            "null",         "null",         "/tmp/camd.socket", COOLAPI  },
+	/* goceed   (gxapi)*/       { "/dev/",                 "gxav%d",       "gxav%d",       "/tmp/camd.socket", GXAPI    },
 };
 
 static int32_t selected_box = -1;
 static int32_t selected_api = -1;
 static int32_t maxfilter = MAX_FILTER;
+#ifndef WITH_WI
 static int32_t dir_fd = -1;
+#endif
 static uint16_t last_client_proto_version = 0;
 static char *last_client_name = NULL;
 static uint32_t ca_descramblers_total = 0; // total number of available descramblers in box
@@ -656,25 +660,24 @@ int32_t dvbapi_net_send(uint32_t request, int32_t socket_fd, uint32_t msgid, int
 		case DVBAPI_SERVER_INFO:
 		{
 			int16_t proto_version = htons(DVBAPI_PROTOCOL_VERSION); // our protocol version
-			char capabilities[128];
-			memset(capabilities, 0, sizeof(capabilities));
+			char capabilities[128] = "\x00"; // two zero characters
 			memcpy(&packet[size], &proto_version, 2);
 			size += 2;
 			uint8_t *info_len = &packet[size]; // info string length
 			size += 1;
-#ifdef WITH_EXTENDED_CW
+
 			if(cfg.dvbapi_extended_cw_api == 1)
 			{
-				cs_strncat(capabilities, ",e1mk", sizeof(capabilities)); // extended cw, key follows mode - supports CSA, DES, AES128
+				cs_strncpy(capabilities + cs_strlen(capabilities), ",e1mk", 6); // extended cw, key follows mode - supports CSA, DES, AES128
 			}
 
 			if(cfg.dvbapi_extended_cw_api == 2)
 			{
-				cs_strncat(capabilities, ",e2", sizeof(capabilities)); // usage of DES algo signalled through PID index - CSA and DES only
+				cs_strncpy(capabilities + cs_strlen(capabilities), ",e2", 4); // usage of DES algo signalled through PID index - CSA and DES only
 			}
-#endif
-			*info_len = snprintf((char *) &packet[size], sizeof(packet) - size, "OSCam %s (%s); %s",
-						CS_VERSION, CS_TARGET, capabilities + 1);
+
+			*info_len = snprintf((char *) &packet[size], sizeof(packet) - size, "NCam %s, build %s (%s); %s",
+						CS_VERSION, CS_REVISION, CS_TARGET, capabilities + 1);
 
 			size += *info_len;
 			break;
@@ -900,11 +903,30 @@ int32_t dvbapi_set_filter(int32_t demux_id, int32_t api, uint16_t pid, uint16_t 
 {
 	int32_t ret = -1, n = -1, i, filterfd = -1;
 
-	for(i = 0; i < maxfilter && demux[demux_id].demux_fd[i].fd > 0; i++) { ; }
+#ifdef WITH_WI
+	int32_t more_cnt = 0;
 
+	for(i = 0; i < maxfilter && demux[demux_id].demux_fd[i].fd > 0; i++)
+	{
+		if(demux[demux_id].demux_fd[i].NumSlots > 1)
+			{ more_cnt += (maxfilter && demux[demux_id].demux_fd[i].NumSlots - 1); }
+	}
+	i += more_cnt;
+#else
+	for(i = 0; i < maxfilter && demux[demux_id].demux_fd[i].fd > 0; i++) { ; }
+#endif
 	if(i >= maxfilter)
 	{
+#ifdef WITH_WI
+		cs_log_dbg(D_DVBAPI, "no free filter (%d %d)", i, maxfilter);
+
+		for(i = 0; i < maxfilter && demux[demux_id].demux_fd[i].fd > 0; i++)
+		{
+			cs_log_dbg(D_DVBAPI, "fd[0x%08x] pid[0x%04x]", demux[demux_id].demux_fd[i].fd, demux[demux_id].demux_fd[i].pid);
+		}
+#else
 		cs_log_dbg(D_DVBAPI, "no free filter");
+#endif
 		return -1;
 	}
 	n = i;
@@ -1043,6 +1065,28 @@ int32_t dvbapi_set_filter(int32_t demux_id, int32_t api, uint16_t pid, uint16_t 
 		}
 #endif
 
+#if defined(WITH_GXAPI)
+	case GXAPI:
+		{
+			gxapi_filter_open filteropen;
+			memset(&filteropen, 0, sizeof(filteropen));
+			filteropen.DemuxID = demux[demux_id].demux_index;
+			filteropen.FilterNum = n;
+			filteropen.DemuxNum = demux_id;
+			filteropen.Pid = pid;
+			filteropen.Depth = 16;
+			memcpy(filteropen.FilterData, filt, 16);
+			memcpy(filteropen.FilterMask, mask, 16);
+
+			ret = gxapi_open_filter(&filteropen, (unsigned int *)&filterfd);
+			if(ret < 0)
+			{
+				ret = -1; // error setting filter!
+			}
+
+		}
+		break;
+#endif
 		default:
 			break;
 	}
@@ -1110,13 +1154,15 @@ static int32_t dvbapi_get_descrambler_info(void)
 	// Ask device for exact number of ca descramblers
 	snprintf(device_path2, sizeof(device_path2), devices[selected_box].ca_device, ca_offset);
 	snprintf(device_path, sizeof(device_path), devices[selected_box].path, 0);
-
-	if (!cs_strncat(device_path, device_path2, sizeof(device_path)))
-		return 0;
+	cs_strncpy(device_path + cs_strlen(device_path), device_path2, cs_strlen(device_path2) + 1);
 
 	if((fd = open(device_path, O_RDWR | O_NONBLOCK)) < 0)
 	{
+#ifdef WITH_WI
+		cs_log_dbg(D_DVBAPI, "ERROR: Can't open device %s (errno=%d %s)", device_path, errno, strerror(errno));
+#else
 		cs_log("ERROR: Can't open device %s (errno=%d %s)", device_path, errno, strerror(errno));
+#endif
 		return 0;
 	}
 
@@ -1181,10 +1227,12 @@ static int32_t dvbapi_detect_api(void)
 		cfg.dvbapi_listenport = 0;
 	}
 
-	int32_t i = 0, n = 0, devnum = -1, dmx_fd = 0, filtercount = 0;
+	int32_t i = 0, n = 0, devnum = -1, filtercount = 0;
 	char device_path[128], device_path2[128];
 	static LLIST *ll_max_fd;
 	ll_max_fd = ll_create("ll_max_fd");
+#ifndef WITH_WI
+	int32_t dmx_fd = 0;
 	LL_ITER itr;
 
 	struct s_open_fd
@@ -1192,6 +1240,7 @@ static int32_t dvbapi_detect_api(void)
 		uint32_t fd;
 	};
 	struct s_open_fd *open_fd;
+#endif
 
 	while(i < BOX_COUNT)
 	{
@@ -1199,26 +1248,30 @@ static int32_t dvbapi_detect_api(void)
 		{
 			snprintf(device_path2, sizeof(device_path2), devices[i].demux_device, 0);
 			snprintf(device_path, sizeof(device_path), devices[i].path, n);
+			cs_strncpy(device_path + cs_strlen(device_path), device_path2, cs_strlen(device_path2) + 1);
 
 			filtercount = 0;
-
-			if (cs_strncat(device_path, device_path2, sizeof(device_path)))
+#ifdef WITH_WI
+			if(devices[i].api == STAPI)
 			{
-				while((dmx_fd = open(device_path, O_RDWR | O_NONBLOCK)) > 0 && filtercount < MAX_FILTER)
-				{
-					filtercount++;
-					if(!cs_malloc(&open_fd, sizeof(struct s_open_fd)))
-					{
-						close(dmx_fd);
-						break;
-					}
-					open_fd->fd = dmx_fd;
-					ll_append(ll_max_fd, open_fd);
-				}
+				filtercount = 32; // wi
 			}
-
+#else
+			while((dmx_fd = open(device_path, O_RDWR | O_NONBLOCK)) > 0 && filtercount < MAX_FILTER)
+			{
+				filtercount++;
+				if(!cs_malloc(&open_fd, sizeof(struct s_open_fd)))
+				{
+					close(dmx_fd);
+					break;
+				}
+				open_fd->fd = dmx_fd;
+				ll_append(ll_max_fd, open_fd);
+			}
+#endif
 			if(filtercount > 0)
 			{
+#ifndef WITH_WI
 				itr = ll_iter_create(ll_max_fd);
 				while((open_fd = ll_iter_next(&itr)))
 				{
@@ -1230,6 +1283,7 @@ static int32_t dvbapi_detect_api(void)
 					while(close(dmx_fd) < 0);
 					ll_iter_remove_data(&itr);
 				}
+#endif
 				devnum = i;
 				selected_api = devices[devnum].api;
 				selected_box = devnum;
@@ -1246,10 +1300,16 @@ static int32_t dvbapi_detect_api(void)
 					return 0;
 				}
 #endif
+#if defined(WITH_GXAPI)
+				if(selected_api == GXAPI && gxdvbapi_init() != 0)
+				{
+					cs_log("ERROR: gxapi: setting up gxapi failed.");
+					return 0;
+				}
+#endif
 				maxfilter = filtercount;
-				cs_log("Detected %s Api: %d, userconfig boxtype: %d maximum number of filters is %d (oscam limit is %d)",
+				cs_log("Detected %s Api: %d, userconfig boxtype: %d maximum number of filters is %d (ncam limit is %d)",
 					device_path, selected_api, cfg.dvbapi_boxtype, filtercount, MAX_FILTER);
-
 #ifdef MODULE_STREAMRELAY
 				// Log enabled demuxer fix
 				if(cfg.dvbapi_demuxer_fix)
@@ -1353,10 +1413,7 @@ int32_t dvbapi_open_device(int32_t type, int32_t num, int32_t adapter)
 	{
 		snprintf(device_path2, sizeof(device_path2), devices[selected_box].demux_device, num);
 		snprintf(device_path, sizeof(device_path), devices[selected_box].path, adapter);
-
-		if (!cs_strncat(device_path, device_path2, sizeof(device_path)))
-			return -1;
-
+		cs_strncpy(device_path + cs_strlen(device_path), device_path2, cs_strlen(device_path2) + 1);
 	}
 	else
 	{
@@ -1376,10 +1433,7 @@ int32_t dvbapi_open_device(int32_t type, int32_t num, int32_t adapter)
 
 		snprintf(device_path2, sizeof(device_path2), devices[selected_box].ca_device, num + ca_offset);
 		snprintf(device_path, sizeof(device_path), devices[selected_box].path, adapter);
-
-		if (!cs_strncat(device_path, device_path2, sizeof(device_path)))
-			return -1;
-
+		cs_strncpy(device_path + cs_strlen(device_path), device_path2, cs_strlen(device_path2) + 1);
 	}
 
 	if(cfg.dvbapi_boxtype == BOXTYPE_SAMYGO)
@@ -1471,7 +1525,7 @@ uint16_t tunemm_caid_map(uint8_t direct, uint16_t caid, uint16_t srvid)
 
 int32_t dvbapi_stop_filter(int32_t demux_id, int32_t type, uint32_t msgid)
 {
-#if defined(WITH_COOLAPI) || defined(WITH_COOLAPI2)
+#if defined(WITH_COOLAPI) || defined(WITH_COOLAPI2) || defined(WITH_GXAPI) || defined(WITH_WI)
 	// We prevented PAT and PMT from starting, so lets don't close them either.
 	if(type == TYPE_PAT || type == TYPE_PMT)
 	{
@@ -1580,6 +1634,17 @@ int32_t dvbapi_stop_filternum(int32_t demux_id, int32_t num, uint32_t msgid)
 					break;
 				}
 #endif
+#if defined(WITH_GXAPI)
+				case GXAPI:
+				{
+					retfilter = gxapi_close_filter((unsigned int)fd);
+					if(retfilter != 0)
+					{
+						retfilter = -1;
+					}
+					break;
+				}
+#endif
 				default:
 					break;
 			}
@@ -1604,7 +1669,7 @@ int32_t dvbapi_stop_filternum(int32_t demux_id, int32_t num, uint32_t msgid)
 			// on bad filterfd dont try to close!
 			if(!cfg.dvbapi_listenport && cfg.dvbapi_boxtype != BOXTYPE_PC_NODMX && errno != 9)
 			{
-				if(selected_api == STAPI)
+				if(selected_api == STAPI || selected_api == GXAPI)
 				{
 					retfd = 0; // stapi closes its own filter fd!
 				}
@@ -1653,7 +1718,7 @@ int32_t dvbapi_stop_filternum(int32_t demux_id, int32_t num, uint32_t msgid)
 		int32_t curpid = demux[demux_id].pidindex;
 
 		// workaround: below dont run on stapi since it handles it own pids...
-		// stapi need to be better integrated in oscam dvbapi.
+		// stapi need to be better integrated in ncam dvbapi.
 		if(selected_api != STAPI)
 		{
 			int32_t z;
@@ -1790,8 +1855,8 @@ void dvbapi_start_sdt_filter(int32_t demux_id)
 
 void dvbapi_start_pat_filter(int32_t demux_id)
 {
-#if defined(WITH_COOLAPI) || defined(WITH_COOLAPI2)
-	// PAT-Filter breaks API and OSCAM for Coolstream.
+#if defined(WITH_COOLAPI) || defined(WITH_COOLAPI2) || defined(WITH_GXAPI) || defined(WITH_WI)
+	// PAT-Filter breaks API and NCAM for Coolstream.
 	// Don't use it
 	return;
 #endif
@@ -1800,8 +1865,8 @@ void dvbapi_start_pat_filter(int32_t demux_id)
 
 void dvbapi_start_pmt_filter(int32_t demux_id)
 {
-#if defined(WITH_COOLAPI) || defined(WITH_COOLAPI2)
-	// PMT-Filter breaks API and OSCAM for Coolstream.
+#if defined(WITH_COOLAPI) || defined(WITH_COOLAPI2) || defined(WITH_GXAPI) || defined(WITH_WI)
+	// PMT-Filter breaks API and NCAM for Coolstream.
 	// Don't use it
 	return;
 #endif
@@ -1883,7 +1948,14 @@ void dvbapi_start_emm_filter(int32_t demux_id)
 
 			if(match)
 			{
-				csystem = get_cardsystem_by_caid(caid);
+				if(rdr->typ == R_EMU)
+				{
+					csystem = rdr->csystem;
+				}
+				else
+				{
+					csystem = get_cardsystem_by_caid(caid);
+				}
 				if(csystem)
 				{
 					if(caid != ncaid)
@@ -1904,7 +1976,15 @@ void dvbapi_start_emm_filter(int32_t demux_id)
 					}
 					else if(csystem->get_emm_filter)
 					{
-						csystem->get_emm_filter(rdr, &dmx_filter, &filter_count);
+						if(rdr->typ == R_EMU)
+						{
+							csystem->get_emm_filter_adv(rdr, &dmx_filter, &filter_count, caid, provid, demux[demux_id].program_number,
+														demux[demux_id].tsid, demux[demux_id].onid, demux[demux_id].ens);
+						}
+						else
+						{
+							csystem->get_emm_filter(rdr, &dmx_filter, &filter_count);
+						}
 					}
 				}
 				else
@@ -2061,10 +2141,10 @@ void dvbapi_add_emmpid(int32_t demux_id, uint16_t caid, uint16_t emmpid, uint32_
 	char cadatatext[40];
 	cs_strncpy(typetext, ":", sizeof(typetext));
 
-	if(type & 0x01) { cs_strncat(typetext, "UNIQUE:", sizeof(typetext)); }
-	if(type & 0x02) { cs_strncat(typetext, "SHARED:", sizeof(typetext)); }
-	if(type & 0x04) { cs_strncat(typetext, "GLOBAL:", sizeof(typetext)); }
-	if(type & 0xF8) { cs_strncat(typetext, "UNKNOWN:", sizeof(typetext)); }
+	if(type & 0x01) { cs_strncpy(typetext + cs_strlen(typetext), "UNIQUE:", 8); }
+	if(type & 0x02) { cs_strncpy(typetext + cs_strlen(typetext), "SHARED:", 8); }
+	if(type & 0x04) { cs_strncpy(typetext + cs_strlen(typetext), "GLOBAL:", 8); }
+	if(type & 0xF8) { cs_strncpy(typetext + cs_strlen(typetext), "UNKNOWN:", 9); }
 
 	if(cadata > 0)
 	{
@@ -2180,7 +2260,7 @@ static void dvbapi_parse_cat_ca_descriptor(int32_t demux_id, const uint8_t *buff
 		case 0x27:
 		case 0x4A:
 		{
-			if(caid_is_bulcrypt(ca_system_id))
+			if(!caid_is_dre(ca_system_id))
 			{
 				dvbapi_add_emmpid(demux_id, ca_system_id, ca_pid, 0, 0, EMM_UNIQUE | EMM_SHARED | EMM_GLOBAL);
 				break;
@@ -2260,8 +2340,11 @@ static void dvbapi_parse_cat(int32_t demux_id, const uint8_t *buffer, uint16_t l
 		}
 	}
 }
-
+#ifdef __powerpc__
+static pthread_mutex_t lockindex;
+#else
 static pthread_mutex_t lockindex = PTHREAD_MUTEX_INITIALIZER;
+#endif
 
 uint32_t dvbapi_get_desc_index(int32_t demux_id, int32_t pid, int32_t stream_id)
 {
@@ -2356,7 +2439,56 @@ void dvbapi_set_pid(int32_t demux_id, int32_t num, uint32_t idx, bool enable, bo
 		case COOLAPI:
 			break;
 #endif
+#if defined WITH_GXAPI
+	case GXAPI:
+		if(use_des == 0)
+		{
+			for(i = 0; i < CA_MAX; i++)
+			{
+				if(((demux[demux_id].ca_mask & (1 << i)) == (uint32_t) (1 << i)))
+				{
+					if(enable)
+					{
+						int ret = gxapi_get_slotid_by_pid(streampid, i);
+						if(ret == 0)
+						{
+							gxapi_desc_open descopen;
+							unsigned int desc_h;
 
+							descopen.DemuxID = i;
+							descopen.Pid = streampid;
+							descopen.Idx = idx;
+
+							ret = gxapi_open_desc(&descopen, &desc_h);
+							if(ret != 0)
+							{
+								cs_log_dbg(D_DVBAPI, "ERROR: Could not open desc demuxid = %d, stream id = %d", i, streampid);
+							}
+							else
+							{
+								cs_log_dbg(D_DVBAPI, "OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOPEN DESC %d (%d %d)XXXXXXXXXXXXXX", desc_h, i, streampid);
+							}
+						}
+					}
+					else
+					{
+						unsigned int desc_h;
+						int ret = gxapi_get_desc_handle(i, streampid, &desc_h);
+						if(!ret)
+						{
+							cs_log_dbg(D_DVBAPI, "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCLOSE DESC %d (%d %d)XXXXXXXXXXXXXX", desc_h, i, streampid);
+							gxapi_close_desc(desc_h);
+						}
+						else
+						{
+							//cs_log_dbg(D_DVBAPI, "ERROR: Could not find desc demuxid = %d, stream id = %d", i, streampid);
+						}
+					}
+				}
+			}
+		}
+		break;
+#endif
 		default:
 			for(i = 0; i < CA_MAX; i++)
 			{
@@ -2422,12 +2554,12 @@ void dvbapi_set_pid(int32_t demux_id, int32_t num, uint32_t idx, bool enable, bo
 										i);
 								newidx = INDEX_INVALID; // flag this takeover / new index as handled
 							}
-#ifdef WITH_EXTENDED_CW
+
 							if(use_des && cfg.dvbapi_extended_cw_api == 2 && ca_pid2.index != -1)
 							{
 								ca_pid2.index |= 0x100; // flag DES algo through pid index
 							}
-#endif
+
 							if(cfg.dvbapi_boxtype == BOXTYPE_PC || cfg.dvbapi_boxtype == BOXTYPE_PC_NODMX)
 							{
 								dvbapi_net_send(DVBAPI_CA_SET_PID, demux[demux_id].socket_fd,
@@ -2642,6 +2774,8 @@ int32_t dvbapi_start_descrambling(int32_t demux_id, int32_t pid, int8_t checked,
 	er->vpid   = demux[demux_id].ECMpids[pid].VPID;
 	er->pmtpid = demux[demux_id].pmtpid;
 	er->onid   = demux[demux_id].onid;
+	er->tsid   = demux[demux_id].tsid;
+	er->ens    = demux[demux_id].ens;
 	er->msgid  = msgid;
 
 #ifdef WITH_STAPI5
@@ -2680,6 +2814,74 @@ int32_t dvbapi_start_descrambling(int32_t demux_id, int32_t pid, int8_t checked,
 		if(config_enabled(CS_CACHEEX) && (!match && (cacheex_is_match_alias(dvbapi_client, er))))
 		{
 			match = 1; // so make it a match to try it!
+		}
+
+		// BISS1 and BISS2 mode 1/E or FAKE caid
+		// ecm pid is fake, so send out one fake ecm request
+		// special treatment: if we asked the cw first without starting a filter,
+		// the cw request will be killed due to no ecmfilter started
+		if(caid_is_fake(demux[demux_id].ECMpids[pid].CAID) || caid_is_biss_fixed(demux[demux_id].ECMpids[pid].CAID))
+		{
+			int32_t j, n;
+			er->ecmlen = 7;
+			er->ecm[0] = 0x80; // to pass the cache check it must be 0x80 or 0x81
+			er->ecm[1] = 0x00;
+			er->ecm[2] = 0x04;
+			i2b_buf(2, er->srvid, er->ecm + 3);
+			i2b_buf(2, er->pmtpid, er->ecm + 5);
+
+			for(j = 0, n = 7; j < demux[demux_id].STREAMpidcount; j++, n += 2)
+			{
+				i2b_buf(2, demux[demux_id].STREAMpids[j], er->ecm + n);
+				er->ecm[2] += 2;
+				er->ecmlen += 2;
+			}
+
+			er->ens &= 0x0FFFFFFF; // clear top 4 bits (in case of DVB-T/C or garbage), prepare for flagging
+			er->ens |= 0xA0000000; // flag to emu: this is the namespace, not a pid
+
+			i2b_buf(2, er->tsid, er->ecm + er->ecmlen);     // place tsid after the last stream pid
+			i2b_buf(2, er->onid, er->ecm + er->ecmlen + 2); // place onid right after tsid
+			i2b_buf(4, er->ens, er->ecm + er->ecmlen + 4);  // place namespace at the end of the ecm
+
+			er->ecm[2] += 8;
+			er->ecmlen += 8;
+
+			cs_log("Demuxer %d trying to descramble PID %d CAID %04X PROVID %06X ECMPID %04X ANY CHID PMTPID %04X VPID %04X",
+				demux_id,
+				pid,
+				demux[demux_id].ECMpids[pid].CAID,
+				demux[demux_id].ECMpids[pid].PROVID,
+				demux[demux_id].ECMpids[pid].ECM_PID,
+				demux[demux_id].pmtpid,
+				demux[demux_id].ECMpids[pid].VPID);
+
+			demux[demux_id].curindex = pid; // set current pid to the fresh started one
+			uint8_t table, mask;
+			if(caid_is_dvn(demux[demux_id].ECMpids[pid].CAID))
+			{
+				table = 0x50;
+				mask = 0xFF;
+			}
+			else
+			{
+				table = 0x80;
+				mask = 0xF0;
+			}
+			dvbapi_start_filter(demux_id,
+						pid,
+						demux[demux_id].ECMpids[pid].ECM_PID,
+						demux[demux_id].ECMpids[pid].CAID,
+						demux[demux_id].ECMpids[pid].PROVID,
+						table,
+						mask,
+						3000,
+						TYPE_ECM);
+
+			started = 1;
+			request_cw(dvbapi_client, er, demux_id, 0); // do not register ecm since this try!
+			fake_ecm = 1;
+			break; // we started an ecmfilter so stop looking for next matching reader!
 		}
 
 		if(match) // if matching reader found check for irdeto cas if local irdeto card check if it received emms in last 60 minutes
@@ -2864,7 +3066,7 @@ void dvbapi_read_priority(void)
 	char token[128], str1[128];
 	char type;
 	int32_t i, ret, count = 0;
-	const char *cs_prio = "oscam.dvbapi";
+	const char *cs_prio = "ncam.dvbapi";
 
 	fp = fopen(get_config_filename(token, sizeof(token), cs_prio), "r");
 	if(!fp)
@@ -2938,7 +3140,7 @@ void dvbapi_read_priority(void)
 		{
 			//fprintf(stderr, "Warning: line containing %s in %s not recognized, ignoring line\n", token, cs_prio);
 			// fprintf would issue the warning to the command line, which is more consistent with other config warnings
-			// however it takes OSCam a long time (>4 seconds) to reach this part of the program, so the warnings are
+			// however it takes NCam a long time (>4 seconds) to reach this part of the program, so the warnings are
 			// reaching tty rather late which leads to confusion. So send the warnings to log file instead
 			cs_log_dbg(D_DVBAPI, "WARN: line containing %s in %s not recognized, ignoring...", token, cs_prio);
 			continue;
@@ -2950,7 +3152,7 @@ void dvbapi_read_priority(void)
 			ret = fclose(fp);
 			if(ret < 0)
 			{
-				cs_log("ERROR: Could not close oscam.dvbapi fd (errno=%d %s)", errno, strerror(errno));
+				cs_log("ERROR: Could not close ncam.dvbapi fd (errno=%d %s)", errno, strerror(errno));
 			}
 			return;
 		}
@@ -2983,13 +3185,13 @@ void dvbapi_read_priority(void)
 #endif
 		char c_srvid[34];
 		c_srvid[0] = '\0';
-		uint32_t caid = 0, provid = 0, srvid = 0, ecmpid = 0, cadata = 0;;
+		uint32_t caid = 0, provid = 0, srvid = 0, ecmpid = 0, cadata = 0;
 		uint32_t chid = 0x10000; //chid=0 is a valid chid
 
 		ret = sscanf(str1, "%4x:%6x:%33[^:]:%4x:%4x:%8x"SCNx16, &caid, &provid, c_srvid, &ecmpid, &chid, &cadata);
 		if(ret < 1)
 		{
-			cs_log("Error in oscam.dvbapi: ret=%d | %c: %04X %06X %s %04X %04X",
+			cs_log("Error in ncam.dvbapi: ret=%d | %c: %04X %06X %s %04X %04X",
 				ret, type, caid, provid, c_srvid, ecmpid, chid);
 			continue; // skip this entry!
 		}
@@ -3130,7 +3332,7 @@ void dvbapi_read_priority(void)
 	ret = fclose(fp);
 	if(ret < 0)
 	{
-		cs_log("ERROR: Could not close oscam.dvbapi fd (errno=%d %s)", errno, strerror(errno));
+		cs_log("ERROR: Could not close ncam.dvbapi fd (errno=%d %s)", errno, strerror(errno));
 	}
 	return;
 }
@@ -3161,7 +3363,7 @@ void dvbapi_resort_ecmpids(int32_t demux_id)
 	int32_t p_order = demux[demux_id].ECMpidcount + 1;
 	struct s_dvbapi_priority *prio;
 
-	// handle prio order in oscam.dvbapi + ignore all chids
+	// handle prio order in ncam.dvbapi + ignore all chids
 	for(rdr = first_active_reader; rdr ; rdr = rdr->next)
 	{
 		total_reader++; // only need to calculate once!
@@ -3243,7 +3445,7 @@ void dvbapi_resort_ecmpids(int32_t demux_id)
 				}
 				else
 				{
-					if(!demux[demux_id].ECMpids[n].status) // only accept first matching prio from oscam.dvbapi
+					if(!demux[demux_id].ECMpids[n].status) // only accept first matching prio from ncam.dvbapi
 					{
 						demux[demux_id].ECMpids[n].status = total_reader + p_order--;
 						matching_done = 1;
@@ -3357,7 +3559,7 @@ void dvbapi_resort_ecmpids(int32_t demux_id)
 		}
 	}
 
-	// ecmpid with highest prio from oscam.dvbapi has now highest status
+	// ecmpid with highest prio from ncam.dvbapi has now highest status
 	// check all ecmpids and get the highest amount cache-ex and local readers
 	int32_t max_local_matching_reader = 0, max_cacheex_reader = 0;
 
@@ -3791,7 +3993,7 @@ static void dvbapi_parse_pmt_ca_descriptor(int32_t demux_id, const uint8_t *buff
 	ca_system_id = b2i(2, buffer);
 	ca_pid = b2i(2, buffer + 2) & 0x1FFF;
 
-	if(ca_system_id == 0x0000 || ca_pid == 0x1FFF)
+	if(ca_system_id == 0x0000 || (!caid_is_biss_fixed(ca_system_id) && !caid_is_fake(ca_system_id) && ca_pid == 0x1FFF))
 	{
 		return; // This is not a valid CAID or ECM pid
 	}
@@ -3857,7 +4059,7 @@ static void dvbapi_parse_pmt_descriptors(int32_t demux_id, const uint8_t *buffer
 			case 0x05: // Registration descriptor
 			{
 				// "HDMV" format identifier is removed
-				// OSCam does not need to know about Blu-ray
+				// NCam does not need to know about Blu-ray
 				const char format_identifiers_audio[10][5] =
 				{
 					"AC-3", "BSSD", "dmat", "DRA1", "DTS1",
@@ -4160,12 +4362,16 @@ static void dvbapi_parse_pmt_info(int32_t demux_id, const uint8_t *buffer, uint1
 
 	// Cleanout demuxer from possible stale info
 	// (reset ECM pids and streams)
+	if(demux[demux_id].running == false)
+	{
+		demux[demux_id].ECMpidcount = 0;
+	}
+
 	for(i = 0; i < demux[demux_id].ECMpidcount; i++)
 	{
 		demux[demux_id].ECMpids[i].streams = 0;
 	}
 
-	demux[demux_id].ECMpidcount = 0;
 	demux[demux_id].STREAMpidcount = 0;
 
 	// Parse program info
@@ -4379,14 +4585,33 @@ static void dvbapi_capmt_notify(struct demux_s *dmx)
 
 static void dvbapi_prepare_descrambling(int32_t demux_id, uint32_t msgid)
 {
-	bool start_emm = true;
+	bool is_powervu = false, start_emm = true;
 	char service_name[CS_SERVICENAME_SIZE];
+
+	// The CA PMT should have given us enough info to determine if descrambling
+	// is possible. Parsing the (real) PMT is not necessary, unless we have a
+	// PowerVu encrypted channel or (for some weird reason) no stream pids at all.
+	// Actually, when no streams are available, we set the PMT pid as the 1st
+	// stream pid, so we have to check against that. Finally, if the PMT pid is
+	// not included in the CA PMT, we start the PAT filter instead.
+
+#ifdef WITH_EXTENDED_CW
+	uint8_t i;
+	for(i = 0; i < demux[demux_id].ECMpidcount; i++)
+	{
+		if(caid_is_powervu(demux[demux_id].ECMpids[i].CAID))
+		{
+			is_powervu = true;
+			break;
+		}
+	}
+#endif
 
 	if(demux[demux_id].pmtpid == 0)
 	{
 		dvbapi_start_pat_filter(demux_id);
 	}
-	else if(demux[demux_id].STREAMpids[0] == demux[demux_id].pmtpid)
+	else if(demux[demux_id].STREAMpids[0] == demux[demux_id].pmtpid || is_powervu)
 	{
 		dvbapi_start_pmt_filter(demux_id);
 	}
@@ -4438,7 +4663,7 @@ static void dvbapi_prepare_descrambling(int32_t demux_id, uint32_t msgid)
 		dvbapi_client->lastswitch = dvbapi_client->last = time((time_t *)0); // reset idle-Time & last switch
 	}
 
-#if defined(WITH_COOLAPI) || defined(WITH_COOLAPI2)
+#if defined(WITH_COOLAPI) || defined(WITH_COOLAPI2) || defined(WITH_GXAPI) || defined(WITH_WI)
 		// Don't start and Stop EMM Filters over and over again if we are on FTA
 		if(dvbapi_client->last_caid == NO_CAID_VALUE)
 		{
@@ -4660,7 +4885,7 @@ int32_t dvbapi_parse_capmt(const uint8_t *buffer, uint32_t length, int32_t connf
 	// ECM pids and start parsing the fresh data.
 	dvbapi_parse_pmt_info(demux_id, buffer + 4, length - 4, 0x1FFF, &ca_pmt_cmd_id);
 
-	// Finally, evaluate what response the host requires from OSCam.
+	// Finally, evaluate what response the host requires from NCam.
 	// This allows multiple CA applications to run at the host simultaneously.
 	// "OK query" will be implemented at a later stage, when support is first
 	// added in enigma2.
@@ -4794,7 +5019,7 @@ static void dvbapi_write_sdt_info(int32_t demux_id, const char *provider_name, c
 
 		if(tmp[0] == '\0')
 		{
-			get_config_filename(tmp, sizeof(tmp), "oscam.provid");
+			get_config_filename(tmp, sizeof(tmp), "ncam.provid");
 
 			if((fpsave = fopen(tmp, "a")))
 			{
@@ -4811,7 +5036,7 @@ static void dvbapi_write_sdt_info(int32_t demux_id, const char *provider_name, c
 
 		if(tmp[0] == '\0')
 		{
-			get_config_filename(tmp, sizeof(tmp), "oscam.srvid2");
+			get_config_filename(tmp, sizeof(tmp), "ncam.srvid2");
 
 			if(!access(tmp, F_OK) && (fpsave = fopen(tmp, "a")))
 			{
@@ -4833,7 +5058,7 @@ static void dvbapi_write_sdt_info(int32_t demux_id, const char *provider_name, c
 			}
 			else
 			{
-				get_config_filename(tmp, sizeof(tmp), "oscam.srvid");
+				get_config_filename(tmp, sizeof(tmp), "ncam.srvid");
 
 				if((fpsave = fopen(tmp, "a")))
 				{
@@ -4986,7 +5211,7 @@ static uint32_t dvbapi_extract_sdt_string(char *buf, uint32_t buflen, const uint
 	if(iso_mode >= -1)
 	{
 		cs_strncpy(buf, tmpbuf, buflen);
-		cs_log_dbg(D_DVBAPI, "sdt-info warning: your build of oscam does not support iso-to-utf8 conversion, special chars may be corrupted!");
+		cs_log_dbg(D_DVBAPI, "sdt-info warning: your build of ncam does not support iso-to-utf8 conversion, special chars may be corrupted!");
 	}
 #endif
 	else if(iso_mode == -2)
@@ -5169,7 +5394,7 @@ int32_t dvbapi_init_listenfd(void)
 	}
 
 	// change the access right on the camd.socket
-	// this will allow oscam to run as root if needed
+	// this will allow ncam to run as root if needed
 	// and still allow non root client to connect to the socket
 	chmod(devices[selected_box].cam_socket_path, S_IRWXU | S_IRWXG | S_IRWXO);
 	return listenfd;
@@ -5216,15 +5441,18 @@ int32_t dvbapi_net_init_listenfd(void)
 	return listenfd;
 }
 
+#ifdef __powerpc__
+static pthread_mutex_t event_handler_lock;
+#else
 static pthread_mutex_t event_handler_lock = PTHREAD_MUTEX_INITIALIZER;
+#endif
 
 void event_handler(int32_t UNUSED(signal))
 {
 	struct stat pmt_info;
 	char dest[1024];
 	struct dirent **entries;
-	int32_t i, n;
-	int32_t pmt_fd = -1;
+	int32_t i, pmt_fd, n;
 	uint8_t mbuf[2048]; // dirty fix: larger buffer needed for CA PMT mode 6 with many parallel channels to decode
 
 	if(dvbapi_client != cur_client())
@@ -5308,17 +5536,16 @@ void event_handler(int32_t UNUSED(signal))
 		SAFE_MUTEX_UNLOCK(&event_handler_lock);
 		return;
 	}
+
 	while(n--)
 	{
 		if(cs_strlen(entries[n]->d_name) < 7)
 		{
-			free(entries[n]);
 			continue;
 		}
 
 		if(strncmp(entries[n]->d_name, "pmt", 3) != 0 || strncmp(entries[n]->d_name + cs_strlen(entries[n]->d_name) - 4, ".tmp", 4) != 0)
 		{
-			free(entries[n]);
 			continue;
 		}
 
@@ -5333,40 +5560,14 @@ void event_handler(int32_t UNUSED(signal))
 
 		if(p == NULL)
 		{
-			cs_log_dbg(D_DVBAPI, "No matching S: line in oscam.dvbapi for pmtfile %s -> skip!", entries[n]->d_name);
+			cs_log_dbg(D_DVBAPI, "No matching S: line in ncam.dvbapi for pmtfile %s -> skip!", entries[n]->d_name);
 			free(entries[n]);
 			continue;
 		}
 #endif
-
-		if (!cs_strlen(TMPDIR))
-		{
-			cs_log_dbg(D_DVBAPI, "BUG! cs_strlen(TMPDIR)!!!\n");
-			free(entries[n]);
-			continue;
-		}
-
-		if (!cs_strlen(entries[n]->d_name))
-		{
-			cs_log_dbg(D_DVBAPI, "BUG! cs_strlen(entries[n]->d_name)!!!\n");
-			free(entries[n]);
-			continue;
-		}
-
-		if((cs_strlen(entries[n]->d_name) + cs_strlen(TMPDIR) - 1) > sizeof(dest))
-		{
-			cs_log_dbg(D_DVBAPI, "BUG! Sum of the (d_name + TMPDIR) = %u > sizeof(dest) !!!\n", (unsigned int)(cs_strlen(entries[n]->d_name) + cs_strlen(TMPDIR) - 1));
-			free(entries[n]);
-			continue;
-		}
-		else
-		{
-			memcpy(dest, TMPDIR, cs_strlen(TMPDIR));
-			memcpy(dest + cs_strlen(TMPDIR), entries[n]->d_name, cs_strlen(entries[n]->d_name));
-			dest[cs_strlen(TMPDIR) + cs_strlen(entries[n]->d_name)] = '\0';
-			pmt_fd = open(dest, O_RDONLY);
-		}
-
+		cs_strncpy(dest, TMPDIR, sizeof(TMPDIR));
+		cs_strncpy(dest + cs_strlen(dest), entries[n]->d_name, cs_strlen(entries[n]->d_name) + 1);
+		pmt_fd = open(dest, O_RDONLY);
 		if(pmt_fd < 0)
 		{
 			free(entries[n]);
@@ -5586,6 +5787,7 @@ void dvbapi_process_input(int32_t demux_id, int32_t filter_num, uint8_t *buffer,
 	if(filtertype == TYPE_ECM)
 	{
 		uint32_t chid = 0x10000;
+		int8_t pvu_skip = 0;
 		ECM_REQUEST *er;
 
 		if(len != 0) // len = 0 receiver encountered an internal bufferoverflow!
@@ -5605,7 +5807,7 @@ void dvbapi_process_input(int32_t demux_id, int32_t filter_num, uint8_t *buffer,
 				return;
 			}
 
-			if(!(buffer[0] == 0x80 || buffer[0] == 0x81))
+			if(!(buffer[0] == 0x80 || buffer[0] == 0x81 || (caid_is_dvn(curpid->CAID) && buffer[0] == 0x50)))
 			{
 				cs_log_dbg(D_DVBAPI, "Received an ECM with invalid ecmtable ID %02X -> ignoring!", buffer[0]);
 				if(curpid)
@@ -5615,8 +5817,25 @@ void dvbapi_process_input(int32_t demux_id, int32_t filter_num, uint8_t *buffer,
 				return;
 			}
 
+#ifdef WITH_EMU
+			if(caid_is_powervu(curpid->CAID)) // ecm counter for powervu
+			{
+				pvu_skip = 1;
+
+				if(sctlen - 11 > buffer[9])
+				{
+					if(buffer[11 + buffer[9]] > curpid->pvu_counter
+						|| (curpid->pvu_counter == 255 && buffer[11 + buffer[9]] == 0)
+						|| ((curpid->pvu_counter - buffer[11 + buffer[9]]) > 5))
+					{
+						curpid->pvu_counter = buffer[11 + buffer[9]];
+						pvu_skip = 0;
+					}
+				}
+			}
+#endif
 			// wait for odd / even ecm change (only not for irdeto!)
-			if(curpid->table == buffer[0] && !caid_is_irdeto(curpid->CAID))
+			if((curpid->table == buffer[0] && !caid_is_irdeto(curpid->CAID) && !caid_is_dvn(curpid->CAID)) || pvu_skip)
 			{
 				if(!(er = get_ecmtask()))
 				{
@@ -5752,7 +5971,10 @@ void dvbapi_process_input(int32_t demux_id, int32_t filter_num, uint8_t *buffer,
 
 		// check for matching chid (unique ecm part in case of non-irdeto cas)
 		// plus added fix for seca2 monthly changing fakechid
-		if((curpid->CHID < 0x10000) && !((chid == curpid->CHID) || ((curpid->CAID >> 8 == 0x01) && (chid & 0xF0FF) == (curpid->CHID & 0xF0FF))))
+		if((curpid->CHID < 0x10000) && !((chid == curpid->CHID)
+				|| ((curpid->CAID >> 8 == 0x01) && (chid&0xF0FF) == (curpid->CHID&0xF0FF))
+				|| caid_is_dvn(curpid->CAID)
+				|| caid_is_streamguard(curpid->CAID)))
 		{
 			if(caid_is_irdeto(curpid->CAID))
 			{
@@ -5960,6 +6182,35 @@ void dvbapi_process_input(int32_t demux_id, int32_t filter_num, uint8_t *buffer,
 			return; // just skip on internal buffer overflow
 		}
 
+#ifdef WITH_EMU
+		if(caid_is_director(demux[demux_id].demux_fd[filter_num].caid))
+		{
+			uint32_t i;
+			uint32_t emmhash;
+
+			if(sctlen < 4)
+			{
+				return;
+			}
+
+			for(i = 0; i + 2 < sctlen; i++)
+			{
+				if(buffer[i] == 0xF0 && (buffer[i + 2] == 0xE1 || buffer[i + 2] == 0xE4))
+				{
+					emmhash = (buffer[3] << 8) | buffer[sctlen - 2];
+					if(demux[demux_id].demux_fd[filter_num].cadata == emmhash)
+					{
+						return;
+					}
+
+					demux[demux_id].demux_fd[filter_num].cadata = emmhash;
+					dvbapi_process_emm(demux_id, filter_num, buffer, sctlen);
+					return;
+				}
+			}
+			return;
+		}
+#endif
 		// fix to handle more than one irdeto emm packet
 		uint8_t *pbuf = buffer;
 		int32_t done = 0;
@@ -6145,6 +6396,7 @@ static void dvbapi_get_packet_size(uint8_t *mbuf, uint16_t mbuf_len, uint16_t *c
 	uint32_t tmp_data_len = 0;
 	uint32_t opcode = b2i(4, mbuf);
 
+
 	switch (opcode)
 	{
 		case DVBAPI_AOT_CA_STOP:
@@ -6231,6 +6483,7 @@ static void dvbapi_handlesockmsg(uint8_t *mbuf, uint16_t chunksize, uint16_t dat
 	}
 
 	uint32_t opcode = b2i(4, mbuf);
+
 	switch(opcode)
 	{
 		case DVBAPI_FILTER_DATA:
@@ -6273,7 +6526,7 @@ static void dvbapi_handlesockmsg(uint8_t *mbuf, uint16_t chunksize, uint16_t dat
 			last_client_proto_version = client_proto;
 			break;
 		}
-
+			
 		case DVBAPI_AOT_CA_PMT:
 		{
 			cs_log_dbg(D_DVBAPI,"Received DVBAPI_AOT_CA_PMT object on socket %d:", connfd);
@@ -6304,7 +6557,7 @@ static void dvbapi_handlesockmsg(uint8_t *mbuf, uint16_t chunksize, uint16_t dat
 						break;
 					}
 				}
-
+					
 				// ipbox fix
 				if(cfg.dvbapi_boxtype == BOXTYPE_IPBOX)
 				{
@@ -6587,6 +6840,13 @@ static void *dvbapi_main_local(void *cli)
 
 	if(cfg.dvbapi_pmtmode != 4 && cfg.dvbapi_pmtmode != 5 && cfg.dvbapi_pmtmode != 6)
 	{
+#ifdef WITH_WI
+		// there is no /tmp.
+		// for test, run test_hi.sh
+		// it makes link /tmp to /mnt/ramdisk
+		// so this is problem. becase fcntl can not work on link file.
+		event_handler(SIGRTMIN + 1);
+#else
 		struct sigaction signal_action;
 		signal_action.sa_handler = event_handler;
 		sigemptyset(&signal_action.sa_mask);
@@ -6600,6 +6860,7 @@ static void *dvbapi_main_local(void *cli)
 			fcntl(dir_fd, F_NOTIFY, DN_MODIFY | DN_CREATE | DN_DELETE | DN_MULTISHOT);
 			event_handler(SIGRTMIN + 1);
 		}
+#endif
 	}
 	else
 	{
@@ -6619,16 +6880,16 @@ static void *dvbapi_main_local(void *cli)
 	}
 
 #if defined WITH_COOLAPI || defined WITH_COOLAPI2 || defined WITH_NEUTRINO
-	int sysret = system("pzapit -rz");
-	if(sysret == -1){
-		// To avoid not used and correct error handling by not ignoring system return value
+	if(system("pzapit -rz") == -1)
+	{
+		cs_log_dbg(D_DVBAPI, "pzapit: command not found");
 	}
 #endif
 	cs_ftime(&start); // register start time
 
 	while(!exit_oscam)
 	{
-		if(pausecam) // for dbox2, STAPI or PC in standby mode don't parse any ecm/emm or try to start next filter
+		if(pausecam) // for dbox2, STAPI or PC in standby mode dont parse any ecm/emm or try to start next filter
 		{
 			continue;
 		}
@@ -6696,7 +6957,7 @@ static void *dvbapi_main_local(void *cli)
 				}
 
 				if(!cfg.dvbapi_listenport && cfg.dvbapi_boxtype != BOXTYPE_PC_NODMX
-					&& selected_api != STAPI && selected_api != COOLAPI)
+					&& selected_api != STAPI && selected_api != COOLAPI && selected_api != GXAPI)
 				{
 					pfd2[pfdcount].fd = demux[i].demux_fd[g].fd;
 					pfd2[pfdcount].events = (POLLIN | POLLPRI);
@@ -6924,7 +7185,7 @@ static void *dvbapi_main_local(void *cli)
 			int64_t timeout = comp_timeb(&end, &start);
 			if(timeout < 0)
 			{
-				cs_log("*** WARNING: BAD TIME AFFECTING WHOLE OSCAM ECM HANDLING ****");
+				cs_log("*** WARNING: BAD TIME AFFECTING WHOLE NCAM ECM HANDLING ****");
 			}
 			cs_log_dbg(D_TRACE, "New events occurred on %d of %d handlers after %"PRId64" ms inactivity", rc, pfdcount, timeout);
 			cs_ftime(&start); // register new start time for next poll
@@ -7155,6 +7416,10 @@ static void *dvbapi_main_local(void *cli)
 	return NULL;
 }
 
+#if WITH_GXAPI
+//#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+#endif
 void dvbapi_write_cw(int32_t demux_id, int32_t pid, int32_t stream_id, uint8_t *cw, uint8_t cw_length, uint8_t *iv,
 					uint8_t iv_length, enum ca_descr_algo algo, enum ca_descr_cipher_mode cipher_mode, uint32_t msgid)
 {
@@ -7178,8 +7443,10 @@ void dvbapi_write_cw(int32_t demux_id, int32_t pid, int32_t stream_id, uint8_t *
 	for(n = 0; n < 2; n++)
 	{
 		// Check if cw has changed and if new cw is empty (all zeros)
+		// Skip check for BISS1 - cw could be indeed zero
+		// Skip check for BISS2 - we use the extended cw, so the "simple" cw is always zero
 		if((memcmp(cw + (n * cw_length), demux[demux_id].last_cw[stream_id][n], cw_length) != 0 || cw_empty)
-			&& (memcmp(cw + (n * cw_length), null_cw, cw_length) != 0))
+			&& (memcmp(cw + (n * cw_length), null_cw, cw_length) != 0 || caid_is_biss(demux[demux_id].ECMpids[pid].CAID)))
 		{
 			// prepare ca device
 			uint32_t idx = dvbapi_ca_set_pid(demux_id, pid, stream_id, (algo == CA_ALGO_DES), msgid);
@@ -7188,15 +7455,15 @@ void dvbapi_write_cw(int32_t demux_id, int32_t pid, int32_t stream_id, uint8_t *
 				return; // return on no index!
 			}
 
+#if defined WITH_COOLAPI || defined WITH_COOLAPI2
+			ca_descr.index = idx;
+			ca_descr.parity = n;
+
 			// just to make the compiler happy (-Wunused-parameter)
 			// (better move the coolapi code to a separate function)
 			ca_descr_mode.cipher_mode = cipher_mode;
 			ca_descr_data.data = iv;
 			ca_descr_data.length = iv_length;
-
-#if defined WITH_COOLAPI || defined WITH_COOLAPI2
-			ca_descr.index = idx;
-			ca_descr.parity = n;
 
 			memcpy(demux[demux_id].last_cw[stream_id][n], cw + (n * 8), 8);
 			memcpy(ca_descr.cw, cw + (n * 8), 8);
@@ -7205,6 +7472,83 @@ void dvbapi_write_cw(int32_t demux_id, int32_t pid, int32_t stream_id, uint8_t *
 				demux_id, n, ca_descr.index, demux[demux_id].ca_mask);
 
 			coolapi_write_cw(demux[demux_id].ca_mask, demux[demux_id].STREAMpids, demux[demux_id].STREAMpidcount, &ca_descr);
+#elif defined WITH_GXAPI
+			if(algo == CA_ALGO_DES)
+			{
+				int32_t i, j;
+
+				for(i = 0; i < CA_MAX; i++)
+				{
+					if(!(demux[demux_id].ca_mask & (1 << i)))
+					{
+						continue; // ca not in use by this demuxer!
+					}
+
+					for(j = 0; j < demux[demux_id].STREAMpidcount; j++)
+					{
+						if(j != stream_id)
+						{
+							continue;
+						}
+
+						ca_descr.index = demux[demux_id].STREAMpids[j];
+						ca_descr.parity = n;
+
+						memcpy(demux[demux_id].last_cw[stream_id][n], cw + (n * 8), 8);
+						memcpy(ca_descr.cw, cw + (n * 8), 8);
+
+						//cs_log_dbg(D_DVBAPI, "Demuxer %d writing %s part (%s) of controlword, replacing expired (%s)",
+						//			demux_id, (n == 1 ? "even" : "odd"), newcw, lastcw);
+
+						cs_log_dbg(D_DVBAPI, "Demuxer %d write cw%d index: %d (ca%d)", demux_id, n, ca_descr.index, i);
+
+						dvbapi_net_send(DVBAPI_CA_SET_DESCR, demux[demux_id].socket_fd, msgid, demux_id, -1 /*unused*/,
+								(unsigned char *)&ca_descr, NULL, NULL, demux[demux_id].client_proto_version);
+
+						if(cfg.dvbapi_extended_cw_api == 1)
+						{
+							ca_descr_mode.index = demux[demux_id].STREAMpids[j];
+							ca_descr_mode.algo = algo;
+							ca_descr_mode.cipher_mode = cipher_mode;
+
+							dvbapi_net_send(DVBAPI_CA_SET_DESCR_MODE, demux[demux_id].socket_fd, msgid, demux_id, -1 /*unused*/,
+									(unsigned char *)&ca_descr_mode, NULL, NULL, demux[demux_id].client_proto_version);
+						}
+					}
+				}
+			}
+			else
+			{
+				unsigned char oddcw[8] = { 0 }, evencw[8] = { 0 };
+				int32_t i, j;
+
+				if(n)
+				{
+					memcpy(oddcw, cw + (n * 8), 8);
+				}
+				else
+				{
+					memcpy(evencw, cw + (n * 8), 8);
+				}
+
+				for(i = 0; i < CA_MAX; i++)
+				{
+					if(((demux[demux_id].ca_mask & (1 << i)) == (uint32_t) (1 << i)))
+					{
+						for(j = 0; j < demux[demux_id].STREAMpidcount; j++)
+						{
+							if(demux[demux_id].ECMpids[pid].useMultipleIndices)
+							{
+								if(j != stream_id)
+								{
+									continue;
+								}
+							}
+							gxapi_set_desc(i, demux[demux_id].STREAMpids[j], oddcw, evencw);
+						}
+					}
+				}
+			}
 #else
 			int32_t i, j, write_cw = 0;
 			uint32_t usedidx, lastidx;
@@ -7274,7 +7618,7 @@ void dvbapi_write_cw(int32_t demux_id, int32_t pid, int32_t stream_id, uint8_t *
 						demux_id, (n == 1 ? "even" : "odd"), newcw, lastcw);
 
 					cs_log_dbg(D_DVBAPI, "Demuxer %d write cw%d index: %d (ca%d)", demux_id, n, ca_descr.index, i);
-#ifdef WITH_EXTENDED_CW
+
 					if(cfg.dvbapi_extended_cw_api == 1) // Set descrambler algorithm and mode
 					{
 						ca_descr_mode.index = usedidx;
@@ -7344,7 +7688,6 @@ void dvbapi_write_cw(int32_t demux_id, int32_t pid, int32_t stream_id, uint8_t *
 						}
 					}
 					else // Send 8 byte CW for DVB-CSA or DES
-#endif
 					{
 						if(cfg.dvbapi_boxtype == BOXTYPE_PC || cfg.dvbapi_boxtype == BOXTYPE_PC_NODMX)
 						{
@@ -7390,25 +7733,6 @@ void delayer(ECM_REQUEST *er, uint32_t delay)
 		cs_sleepms(delay - gone);
 	}
 }
-
-#ifdef WITH_EXTENDED_CW
-bool caid_is_csa_alt(uint16_t caid)
-{
-	return caid == 0x09c4 || caid == 0x098c || caid==0x098d;
-}
-
-bool select_csa_alt(ECM_REQUEST *er)
-{
-	if(caid_is_csa_alt(er->caid))
-	{
-		if((er->ecm[2] - er->ecm[4]) == 4)
-		{
-			return true;
-		}
-	}
-	return false;
-}
-#endif
 
 void dvbapi_send_dcw(struct s_client *client, ECM_REQUEST *er)
 {
@@ -7457,7 +7781,9 @@ void dvbapi_send_dcw(struct s_client *client, ECM_REQUEST *er)
 			i, (er->rc >= E_NOTFOUND ? "no " : ""), j, er->caid, er->prid, er->pid, er->chid, er->vpid);
 
 		uint32_t status = dvbapi_check_ecm_delayed_delivery(i, er);
+#ifndef WITH_WI
 		uint32_t comparecw0 = 0, comparecw1 = 0;
+#endif
 		char ecmd5[17 * 3];
 #ifdef WITH_DEBUG
 		if(cs_dblevel & D_DVBAPI)
@@ -7465,6 +7791,7 @@ void dvbapi_send_dcw(struct s_client *client, ECM_REQUEST *er)
 			cs_hexdump(0, er->ecmd5, 16, ecmd5, sizeof(ecmd5));
 		}
 #endif
+
 		if(status == 1 && er->rc) // wrong ecmhash
 		{
 			cs_log_dbg(D_DVBAPI, "Demuxer %d not interested in response ecmhash %s (requested different one)", i, ecmd5);
@@ -7487,10 +7814,12 @@ void dvbapi_send_dcw(struct s_client *client, ECM_REQUEST *er)
 				er->rc = E_NOTFOUND;
 			}
 		}
-
+#ifndef WITH_WI
 		// 0=matching ecm hash, 2=no filter, 3=table reset, 4=cache-ex response
 		// Check only against last_cw[0] (index 0) - No need to check the rest
-		if((status == 0 || status == 3 || status == 4) && er->rc < E_NOTFOUND)
+		// Skip check for BISS1 - cw could be indeed zero
+		// Skip check for BISS2 - we use the extended cw, so the "simple" cw is always zero
+		if((status == 0 || status == 3 || status == 4) && er->rc < E_NOTFOUND && !caid_is_biss(er->caid))
 		{
 			// check for matching control word
 			if(memcmp(er->cw, demux[i].last_cw[0][0], 8) == 0 &&
@@ -7510,7 +7839,7 @@ void dvbapi_send_dcw(struct s_client *client, ECM_REQUEST *er)
 				nocw_write = 1;
 			}
 		}
-
+#endif
 		if(status == 3) // table reset
 		{
 			cs_log_dbg(D_DVBAPI, "Demuxer %d luckyshot new controlword ecm response hash %s (ecm table reset)", i, ecmd5);
@@ -7758,6 +8087,24 @@ void dvbapi_send_dcw(struct s_client *client, ECM_REQUEST *er)
 
 		delayer(er, delay);
 
+#if defined(WITH_EMU) || defined(WITH_DEBUG)
+		if((cs_dblevel & D_DVBAPI) && (er->selected_reader->typ == R_EMU))
+		{
+			cs_log_dbg(D_DVBAPI, "------------");
+			cs_log_dbg(D_DVBAPI, "- KEY INFO -");
+			cs_log_dbg(D_DVBAPI, "MODE      : %s", (er->cw_ex.mode == CW_MODE_MULTIPLE_CW ? "Multiple CW" : "Single CW"));
+			cs_log_dbg(D_DVBAPI, "ALGO      : %s", (er->cw_ex.algo == CW_ALGO_CSA ? "CSA" : (er->cw_ex.algo == CW_ALGO_DES ? "DES56" : (er->cw_ex.algo == CW_ALGO_AES128 ? "AES128" : "Unknown"))));
+			cs_log_dbg(D_DVBAPI, "ALGO MODE : %s", (er->cw_ex.algo_mode == CW_ALGO_MODE_CBC ? "CBC" : "ECB"));
+			cs_log_dump_dbg(D_DVBAPI, er->cw, 16, "VIDEO CW" );
+			cs_log_dump_dbg(D_DVBAPI, er->cw_ex.audio[0], 16, "AUDIO CW 1");
+			cs_log_dump_dbg(D_DVBAPI, er->cw_ex.audio[1], 16, "AUDIO CW 2");
+			cs_log_dump_dbg(D_DVBAPI, er->cw_ex.audio[2], 16, "AUDIO CW 3");
+			cs_log_dump_dbg(D_DVBAPI, er->cw_ex.audio[3], 16, "AUDIO CW 4");
+			cs_log_dump_dbg(D_DVBAPI, er->cw_ex.data, 16, "DATA" );
+			cs_log_dump_dbg(D_DVBAPI, er->cw_ex.session_word, 32, "Session Word");
+			cs_log_dbg(D_DVBAPI, "------------");
+		}
+#endif
 #ifdef MODULE_STREAMRELAY
 		bool set_dvbapi_cw = true;
 		if(chk_ctab_ex(er->caid, &cfg.stream_relay_ctab) && cfg.stream_relay_enabled)
@@ -7771,7 +8118,92 @@ void dvbapi_send_dcw(struct s_client *client, ECM_REQUEST *er)
 		{
 #if defined(WITH_STAPI) || defined(WITH_STAPI5)
 		case STAPI:
+#ifdef WITH_WI
+			{
+				int typ = 1; // CW type: Single 1, CSA 2, DES 3, AES 4
+				uint8_t cw[4][16] = {{0}};
+#ifdef WITH_EXTENDED_CW
+				if(er->cw_ex.mode != demux[i].ECMpids[j].useMultipleIndices)
+				{
+					uint32_t idx;
+
+					for(k = 0; k < demux[i].STREAMpidcount; k++)
+					{
+						if(demux[i].ECMpids[j].useMultipleIndices)
+						{
+							idx = demux[i].ECMpids[j].index[k];
+						}
+						else
+						{
+							idx = demux[i].ECMpids[j].index[0];
+						}
+						dvbapi_set_pid(i, k, idx, false, false, er->msgid); // disable streampid
+					}
+
+					for(k = 0; k < MAX_STREAM_INDICES; k++)
+					{
+						demux[i].ECMpids[j].index[k] = INDEX_INVALID;
+					}
+				}
+
+				if(er->cw_ex.mode == CW_MODE_MULTIPLE_CW)
+				{
+					int32_t key_pos_a = 0;
+					demux[i].ECMpids[j].useMultipleIndices = 1;
+					typ = er->cw_ex.algo + 2;
+
+					for(k = 0; k < demux[i].STREAMpidcount; k++)
+					{
+						if(demux[i].STREAMpidsType[k] == STREAM_VIDEO)
+						{
+							if (k < 2)
+							{
+								memcpy(cw[k], er->cw, 16);
+							}
+							else
+							{
+								memcpy(cw[1], er->cw, 16);
+							}
+							//cs_log_dbg(D_DVBAPI, "STREAM_VIDEO: demux[i]:%d k:%d",i, k);
+							//cs_log_dump_dbg(D_DVBAPI, cw[k], 16, "VIDEO CW :");
+						}
+						else if(demux[i].STREAMpidsType[k] == STREAM_AUDIO)
+						{
+							if(key_pos_a < 4)
+							{
+								memcpy(cw[k], er->cw_ex.audio[key_pos_a], 16);
+								key_pos_a++;
+								//cs_log_dbg(D_DVBAPI, "STREAM_AUDIO: demux[i]:%d k:%d key_pos_audio:%d",i, k, key_pos_a);
+								//cs_log_dump_dbg(D_DVBAPI, cw[k], 16, "AUDIO CW :");
+							}
+						}
+					}
+				}
+				else
+				{
+					demux[i].ECMpids[j].useMultipleIndices = 0;
+#ifdef WI_OLD
+					memcpy(cw, er->cw, 16);
+#else
+					if(er->cw_ex.algo == CW_ALGO_AES128)
+					{
+						typ = 4;
+						memcpy(cw, er->cw_ex.session_word, 32);
+					}
+					else
+					{
+						memcpy(cw, er->cw, 16);
+					}
+#endif
+				}
+#else
+				memcpy(cw, er->cw, 16);
+#endif
+				stapi_write_cw(i, (uint8_t*) cw, demux[i].STREAMpids, demux[i].STREAMpidcount, demux[i].pmt_file, typ);
+			}
+#else
 			stapi_write_cw(i, er->cw, demux[i].STREAMpids, demux[i].STREAMpidcount, demux[i].pmt_file);
+#endif
 			break;
 #endif
 		default:
@@ -7835,22 +8267,42 @@ void dvbapi_send_dcw(struct s_client *client, ECM_REQUEST *er)
 					{
 						dvbapi_write_cw(i, j, 0, er->cw_ex.session_word, 16, er->cw_ex.data, 16, er->cw_ex.algo, er->cw_ex.algo_mode, er->msgid);
 					}
-					else if(er->cw_ex.algo == CW_ALGO_CSA)
-					{
-						if(select_csa_alt(er))
-						{
-							er->cw_ex.algo = CW_ALGO_CSA_ALT;
-						}
-						dvbapi_write_cw(i, j, 0, er->cw, 8, NULL, 0, er->cw_ex.algo, er->cw_ex.algo_mode, er->msgid);
-					}
 					else
 					{
 						dvbapi_write_cw(i, j, 0, er->cw, 8, NULL, 0, er->cw_ex.algo, er->cw_ex.algo_mode, er->msgid);
 					}
-				}
+					//if(
+					//	(strncmp(boxtype_get(), "dm7080", 6) == 0) ||
+					//	(strncmp(boxtype_get(), "dm525",  5) == 0) ||
+					//	(strncmp(boxtype_get(), "dm520",  5) == 0) ||
+					//	(strncmp(boxtype_get(), "dm820",  5) == 0) ||
+					//	(strncmp(boxtype_get(), "dm900",  5) == 0) ||
+					//	(strncmp(boxtype_get(), "dm920",  5) == 0))
+					//	{
+					//		dvbapi_write_cw(i, er->cw, j, 0, CA_ALGO_DVBCSA, CA_MODE_CBC, er->msgid); // quick fix - we need to properly initialize the er->cw_ex members
+					//	}
+					//	else
+					//	{
+					//		dvbapi_write_cw(i, er->cw, j, 0, er->cw_ex.algo, er->cw_ex.algo_mode, er->msgid);
+					//	}
+ 				}
 #else
 				cfg.dvbapi_extended_cw_api = 0; // in CSA mode extended_cw_api should be always 0 regardless what user selected!
 				dvbapi_write_cw(i, j, 0, er->cw, 8, NULL, 0, CA_ALGO_DVBCSA, CA_MODE_CBC, er->msgid);
+				//if(
+				//	(strncmp(boxtype_get(), "dm7080", 6) == 0) ||
+				//	(strncmp(boxtype_get(), "dm525",  5) == 0) ||
+				//	(strncmp(boxtype_get(), "dm520",  5) == 0) ||
+				//	(strncmp(boxtype_get(), "dm820",  5) == 0) ||
+				//	(strncmp(boxtype_get(), "dm900",  5) == 0) ||
+				//	(strncmp(boxtype_get(), "dm920",  5) == 0))
+				//	{
+				//		dvbapi_write_cw(i, er->cw, j, 0, CA_ALGO_DVBCSA, CA_MODE_CBC, er->msgid);
+				//	}
+				//	else
+				//	{
+				//		dvbapi_write_cw(i, er->cw, j, 0, CA_ALGO_DVBCSA, CA_MODE_CBC, er->msgid);
+				//	}
 #endif
 				break;
 			}
@@ -7873,7 +8325,6 @@ void dvbapi_send_dcw(struct s_client *client, ECM_REQUEST *er)
 			}
 		}
 #endif
-
 		// reset idle-Time
 		client->last = time((time_t *)0); // ********* TO BE FIXED LATER ON ******
 
@@ -7924,8 +8375,8 @@ static int8_t isValidCW(uint8_t *cw)
 
 void dvbapi_write_ecminfo_file(struct s_client *client, ECM_REQUEST *er, uint8_t *lastcw0, uint8_t *lastcw1, uint8_t cw_length)
 {
-#define ECMINFO_TYPE_OSCAM    0
-#define ECMINFO_TYPE_OSCAM_MS 1
+#define ECMINFO_TYPE_NCAM    0
+#define ECMINFO_TYPE_NCAM_MS 1
 #define ECMINFO_TYPE_WICARDD  2
 #define ECMINFO_TYPE_MGCAMD   3
 #define ECMINFO_TYPE_CCCAM    4
@@ -8059,10 +8510,10 @@ void dvbapi_write_ecminfo_file(struct s_client *client, ECM_REQUEST *er, uint8_t
 								reader_name, from_name, from_port, proto_name);
 						}
 						else
-						{
-							fprintf(ecmtxt, "reader: %s\nfrom: %s - %s\nprotocol: %s\n",
-								reader_name, from_name, from_device, proto_name);
-						}
+							{
+								fprintf(ecmtxt, "reader: %s\nfrom: %s - %s\nprotocol: %s\n",
+									reader_name, from_name, from_device, proto_name);
+							}
 					}
 					break;
 
@@ -8076,23 +8527,15 @@ void dvbapi_write_ecminfo_file(struct s_client *client, ECM_REQUEST *er, uint8_t
 				fprintf(ecmtxt, "ecm time: %.3f\n", (float) client->cwlastresptime / 1000);
 		}
 
-		if(cfg.dvbapi_ecminfo_type <= ECMINFO_TYPE_OSCAM_MS)
+		if(cfg.dvbapi_ecminfo_type <= ECMINFO_TYPE_NCAM_MS)
 		{
 			switch(er->rc)
 			{
 				case E_FOUND:
 					if(er->selected_reader)
 					{
-						if(is_network_reader(er->selected_reader))
-						{
-							fprintf(ecmtxt, "reader: %s\nfrom: %s:%d\nprotocol: %s\nhops: %d\n",
-								reader_name, from_name, from_port, proto_name, hops);
-						}
-						else
-						{
-							fprintf(ecmtxt, "reader: %s\nfrom: %s - %s\nprotocol: %s\nhops: %d\n",
-								reader_name, from_name, from_device, proto_name, hops);
-						}
+						fprintf(ecmtxt, "reader: %s\nfrom: %s:%d\nprotocol: %s\nhops: %d\n",
+							reader_name, from_name, from_port, proto_name, hops);
 					}
 					break;
 
@@ -8104,7 +8547,7 @@ void dvbapi_write_ecminfo_file(struct s_client *client, ECM_REQUEST *er, uint8_t
 					break;
 			}
 
-			if(cfg.dvbapi_ecminfo_type == ECMINFO_TYPE_OSCAM)
+			if(cfg.dvbapi_ecminfo_type == ECMINFO_TYPE_NCAM)
 			{
 				fprintf(ecmtxt, "ecm time: %.3f\n", (float) client->cwlastresptime / 1000);
 			}
@@ -8205,7 +8648,7 @@ int32_t dvbapi_set_section_filter(int32_t demux_id, ECM_REQUEST *er, int32_t n)
 {
 	if(!er) { return -1; }
 
-	if(USE_OPENXCAS || (selected_api != DVBAPI_3 && selected_api != DVBAPI_1 && selected_api != STAPI) // only valid for dvbapi3, dvbapi1 and STAPI
+	if(USE_OPENXCAS || (selected_api != DVBAPI_3 && selected_api != DVBAPI_1 && selected_api != STAPI && selected_api != GXAPI) // only valid for dvbapi3, dvbapi1 and STAPI
 		|| (cfg.dvbapi_boxtype == BOXTYPE_IPBOX || cfg.dvbapi_boxtype == BOXTYPE_IPBOX_PMT)) // reported buggy using sectionfiltering after 1~4 hours -> for now disabled!
 	{
 		return 0;
@@ -8255,14 +8698,21 @@ int32_t dvbapi_set_section_filter(int32_t demux_id, ECM_REQUEST *er, int32_t n)
 		ecmfilter = 0x80; // current processed ecm is odd, next will be filtered for even
 	}
 
-	if(curpid->table != 0) // cycle ecmtype from odd to even or even to odd
+	if(caid_is_dvn(er->caid))
 	{
-		filter[0] = ecmfilter; // only accept new ecms (if previous odd, filter for even and vice versa)
+		filter[0] = 0x50; // set filter to wait for any ecms
+		mask[0] = 0xFF;
+		cs_log_dbg(D_DVBAPI, "Demuxer %d Filter %d set ecmtable to %s (CAID %04X PROVID %06X FD %d)", demux_id, n + 1,
+				   "EVEN+ODD", curpid->CAID, curpid->PROVID, fd);
+	}
+	else if(curpid->table != 0)   // cycle ecmtype from odd to even or even to odd
+	{
+		filter[0] = ecmfilter; // only accept new ecms (if previous odd, filter for even and visaversa)
 		mask[0] = 0xFF;
 		cs_log_dbg(D_DVBAPI, "Demuxer %d Filter %d set ecmtable to %s (CAID %04X PROVID %06X FD %d)",
 			demux_id, n + 1, (ecmfilter == 0x80 ? "EVEN" : "ODD"), curpid->CAID, curpid->PROVID, fd);
 	}
-	else // not decoding right now so we are interessted in all ecm types!
+	else // not decoding right now so we are interessted in all ecmtypes!
 	{
 		filter[0] = 0x80; // set filter to wait for any ecms
 		mask[0] = 0xF0;
@@ -8297,7 +8747,7 @@ int32_t dvbapi_set_section_filter(int32_t demux_id, ECM_REQUEST *er, int32_t n)
 				break;
 
 			case 0x4A: // DRE-Crypt, Bulcrypt, Tongang and others?
-				if(!caid_is_bulcrypt(er->caid))
+				if(caid_is_dre(er->caid))
 				{
 					offset = 6;
 				}
@@ -8449,6 +8899,39 @@ int32_t dvbapi_activate_section_filter(int32_t demux_id, int32_t num, int32_t fd
 		}
 #endif
 
+#if defined(WITH_GXAPI)
+		case GXAPI:
+		{
+			gxapi_filter_open filteropen;
+			unsigned int filterfd;
+
+			memset(&filteropen, 0, sizeof(filteropen));
+			filteropen.DemuxID = demux[demux_id].demux_index;
+			filteropen.FilterNum = num;
+			filteropen.DemuxNum = demux_id;
+			filteropen.Pid = pid;
+			filteropen.Depth = 16;
+			memcpy(filteropen.FilterData, filter, 16);
+			memcpy(filteropen.FilterMask, mask, 16);
+
+			ret = gxapi_close_filter((unsigned int)fd);
+			if(ret != 0)
+			{
+				cs_log_dbg(D_DVBAPI, "Demuxer %d filter 0x%08x close failed", demux_id, fd);
+				return -1;
+			}
+
+			ret = gxapi_open_filter(&filteropen, &filterfd);
+			if(ret != 0)
+			{
+				cs_log_dbg(D_DVBAPI, "Demuxer %d pid 0x%08x open failed", demux_id, pid);
+				return -1;
+			}
+
+			demux[demux_id].demux_fd[num].fd = filterfd;
+			break;
+		}
+#endif
 		default:
 			break;
 	}
@@ -8495,7 +8978,9 @@ int32_t dvbapi_check_ecm_delayed_delivery(int32_t demux_id, ECM_REQUEST *er)
 	}
 
 	// Check for null cw
-	if(memcmp(er->cw, nullcw, 8) == 0 && memcmp(er->cw + 8, nullcw, 8) == 0)
+	// Skip check for BISS1 - cw could be indeed zero
+	// Skip check for BISS2 - we use the extended cw, so the "simple" cw is always zero
+	if(memcmp(er->cw, nullcw, 8) == 0 && memcmp(er->cw + 8, nullcw, 8) == 0 && !caid_is_biss(er->caid))
 	{
 		return 5;
 	}
@@ -8655,26 +9140,23 @@ int8_t update_streampid_list(uint8_t cadevice, uint16_t pid, uint32_t idx, bool 
 			{
 				if((listitem->activeindexers & (1 << idx)) == (uint64_t) (1 << idx))
 				{
-#ifdef WITH_EXTENDED_CW
 					if(cfg.dvbapi_extended_cw_api == 2 && use_des != listitem->use_des)
 					{
 						listitem->use_des = use_des;
 						return FIRST_STREAMPID_INDEX;
 					}
-#endif
 					return FOUND_STREAMPID_INDEX; // match found
 				}
 				else
 				{
 					listitem->activeindexers |= (1 << idx); // ca + pid found but not this index -> add this index
 					cs_log_dbg(D_DVBAPI, "Added existing streampid %04X with new index %d to ca%d", pid, idx, cadevice);
-#ifdef WITH_EXTENDED_CW
+
 					if(cfg.dvbapi_extended_cw_api == 2 && use_des != listitem->use_des)
 					{
 						listitem->use_des = use_des;
 						return FIRST_STREAMPID_INDEX;
 					}
-#endif
 					return ADDED_STREAMPID_INDEX;
 				}
 			}

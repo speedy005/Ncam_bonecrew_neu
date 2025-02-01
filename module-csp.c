@@ -12,11 +12,11 @@
 #ifdef CS_CACHEEX
 
 #include "module-cacheex.h"
-#include "oscam-cache.h"
-#include "oscam-ecm.h"
-#include "oscam-net.h"
-#include "oscam-string.h"
-#include "oscam-time.h"
+#include "ncam-cache.h"
+#include "ncam-ecm.h"
+#include "ncam-net.h"
+#include "ncam-string.h"
+#include "ncam-time.h"
 
 #define TYPE_REQUEST   1
 #define TYPE_REPLY     2

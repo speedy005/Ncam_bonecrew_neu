@@ -4,7 +4,7 @@
 
 #ifdef MODULE_GBOX
 #include "minilzo/minilzo.h"
-#include "oscam-string.h"
+#include "ncam-string.h"
 
 
 uint16_t gbox_get_caid(uint32_t caprovid)

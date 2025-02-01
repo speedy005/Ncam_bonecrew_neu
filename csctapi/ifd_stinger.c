@@ -27,7 +27,7 @@ services = services2
 
 #ifdef CARDREADER_STINGER
 
-#include "../oscam-time.h"
+#include "../ncam-time.h"
 #include "icc_async.h"
 #include "ifd_db2com.h"
 #include "ifd_phoenix.h"

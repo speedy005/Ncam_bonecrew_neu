@@ -344,29 +344,21 @@ static void cwpkkey_fn(const char *token, char *value, void *setting, FILE *f)
 	//	rdr_log(rdr, "CWPK config key length: %16X", len);
 		if(len == 0 || len > 32)
 		{
-			rdr->cwpk_mod_length = 0;
-			memset(rdr->cwpk_mod, 0, sizeof(rdr->cwpk_mod));
 		}
 		else
 		{
-			if(key_atob_l(value, rdr->cwpk_mod, len))
 			{
 				fprintf(stderr, "reader cwpkkey parse error, %s=%s\n", token, value);
-				rdr->cwpk_mod_length = 0;
-				memset(rdr->cwpk_mod, 0, sizeof(rdr->cwpk_mod));
 			}
 			else
 			{
-				rdr->cwpk_mod_length = len/2;
 			}
 		}
 		return;
 	}
-	int32_t len = rdr->cwpk_mod_length;
 	if(len > 0)
 	{
 		char tmp[len * 2 + 1];
-		fprintf_conf(f, "cwpkkey", "%s\n", cs_hexdump(0, rdr->cwpk_mod, len, tmp, sizeof(tmp)));
 	}
 	else if(cfg.http_full_cfg)
 		{ fprintf_conf(f, "cwpkkey", "\n"); }
@@ -1076,7 +1068,6 @@ static const struct config_list reader_opts[] =
 	DEF_OPT_FUNC("lb_whitelist_services"          , OFS(lb_sidtabs),                      reader_lb_services_fn),
 	DEF_OPT_INT32("inactivitytimeout"             , OFS(tcp_ito),                         DEFAULT_INACTIVITYTIMEOUT),
 	DEF_OPT_INT32("reconnecttimeout"              , OFS(tcp_rto),                         DEFAULT_TCP_RECONNECT_TIMEOUT),
-	DEF_OPT_INT32("reconnectdelay"                , OFS(tcp_reconnect_delay),             60000),
 	DEF_OPT_INT32("resetcycle"                    , OFS(resetcycle),                      0),
 	DEF_OPT_INT8("disableserverfilter"            , OFS(ncd_disable_server_filt),         0),
 	DEF_OPT_INT8("connectoninit"                  , OFS(ncd_connect_on_init),             0),
@@ -1130,19 +1121,12 @@ static const struct config_list reader_opts[] =
 	DEF_OPT_FUNC("deskey"                         , 0,                                    deskey_fn),
 #ifdef READER_NAGRA_MERLIN
 	DEF_OPT_FUNC_X("mod1"                         , OFS(mod1),                            param_fn, SIZEOF(mod1) ^ (OFS(mod1_length) - OFS(mod1)) << 8),
-	DEF_OPT_FUNC_X("idird"                        , OFS(idird),                           param_fn, SIZEOF(idird) ^ (OFS(idird_length) - OFS(idird)) << 8),
-	DEF_OPT_FUNC_X("cmd0eprov"                    , OFS(cmd0eprov),                       param_fn, SIZEOF(cmd0eprov) ^ (OFS(cmd0eprov_length) - OFS(cmd0eprov)) << 8),
-	DEF_OPT_FUNC_X("mod2"                         , OFS(mod2),                            param_fn, SIZEOF(mod2) ^ (OFS(mod2_length) - OFS(mod2)) << 8),
-	DEF_OPT_FUNC_X("key3588"                      , OFS(key3588),                         param_fn, SIZEOF(key3588) ^ (OFS(key3588_length) - OFS(key3588)) << 8),
 	DEF_OPT_FUNC_X("key3460"                      , OFS(key3460),                         param_fn, SIZEOF(key3460) ^ (OFS(key3460_length) - OFS(key3460)) << 8),
 	DEF_OPT_FUNC_X("key3310"                      , OFS(key3310),                         param_fn, SIZEOF(key3310) ^ (OFS(key3310_length) - OFS(key3310)) << 8),
 	DEF_OPT_FUNC_X("data50"                       , OFS(data50),                          param_fn, SIZEOF(data50) ^ (OFS(data50_length) - OFS(data50)) << 8),
 	DEF_OPT_FUNC_X("mod50"                        , OFS(mod50),                           param_fn, SIZEOF(mod50) ^ (OFS(mod50_length) - OFS(mod50)) << 8),
 	DEF_OPT_FUNC_X("nuid"                         , OFS(nuid),                            param_fn, SIZEOF(nuid) ^ (OFS(nuid_length) - OFS(nuid)) << 8),
-	DEF_OPT_FUNC_X("forcepair"                    , OFS(forcepair),                       param_fn, SIZEOF(forcepair) ^ (OFS(forcepair_length) - OFS(forcepair)) << 8),
-	DEF_OPT_FUNC_X("otpcsc"                       , OFS(otpcsc),                          param_fn, SIZEOF(otpcsc) ^ (OFS(otpcsc_length) - OFS(otpcsc)) << 8),
 	DEF_OPT_FUNC_X("otacsc"                       , OFS(otacsc),                          param_fn, SIZEOF(otacsc) ^ (OFS(otacsc_length) - OFS(otacsc)) << 8),
-	DEF_OPT_FUNC_X("cwpkcaid"                     , OFS(cwpkcaid),                        param_fn, SIZEOF(cwpkcaid) ^ (OFS(cwpkcaid_length) - OFS(cwpkcaid)) << 8),
 	DEF_OPT_FUNC_X("cwekey0"                      , OFS(cwekey[0]),                       param_fn, SIZEOF(cwekey[0]) ^ (OFS(cwekey_length[0]) - OFS(cwekey[0])) << 8),
 	DEF_OPT_FUNC_X("cwekey1"                      , OFS(cwekey[1]),                       param_fn, SIZEOF(cwekey[1]) ^ (OFS(cwekey_length[1]) - OFS(cwekey[1])) << 8),
 	DEF_OPT_FUNC_X("cwekey2"                      , OFS(cwekey[2]),                       param_fn, SIZEOF(cwekey[2]) ^ (OFS(cwekey_length[2]) - OFS(cwekey[2])) << 8),
@@ -1167,7 +1151,6 @@ static const struct config_list reader_opts[] =
 	DEF_OPT_INT8("headermode"                     , OFS(headermode),                      1),
 #endif
 #if defined(READER_NAGRA)
-	DEF_OPT_FUNC_X("cak63nuid"                    , OFS(cak63nuid),                       param_fn, SIZEOF(cak63nuid) ^ (OFS(cak63nuid_length) - OFS(cak63nuid)) << 8),
 	DEF_OPT_FUNC_X("cak63cwekey"                  , OFS(cak63cwekey),                     param_fn, SIZEOF(cak63cwekey) ^ (OFS(cak63cwekey_length) - OFS(cak63cwekey)) << 8),
 #endif
 
@@ -1280,10 +1263,8 @@ static bool reader_check_setting(const struct config_list *UNUSED(clist), void *
 		"fix9993", "rsakey", "deskey", "ins7e", "ins42", "ins7e11", "ins2e06", "k1_generic", "k1_unique", "force_irdeto", "needsemmfirst", "boxkey",
 		"atr", "detect", "nagra_read", "mhz", "cardmhz", "readtiers", "read_old_classes", "use_gpio", "needsglobalfirst",
 #ifdef READER_NAGRA_MERLIN
-		"mod1", "idird", "cmd0eprov", "mod2", "key3588", "key3460", "key3310", "data50", "mod50", "nuid", "forcepair", "otpcsc", "otacsc", "cwpkcaid", "headermode", "cwekey0", "cwekey1", "cwekey2", "cwekey3", "cwekey4", "cwekey5", "cwekey6", "cwekey7", "cwekey8", "cwekey9", "cwekey10", "cwekey11", "cwekey12", "cwekey13", "cwekey14", "cwekey15", "cwekey16",
 #endif
 #if defined(READER_NAGRA)
-		"cak63nuid", "cak63cwekey",
 #endif
 #if defined(READER_DRE) || defined(READER_DRECAS)
 		"exec_cmd_file",

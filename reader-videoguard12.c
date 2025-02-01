@@ -275,7 +275,7 @@ static int32_t videoguard12_card_init(struct s_reader *reader, ATR *newatr)
 		{
 			boxID[i] = (reader->boxid >> (8 * (3 - i))) % 0x100;
 		}
-		rdr_log_dbg(reader, D_READER, "oscam.server BoxID: %02X%02X%02X%02X", boxID[0], boxID[1], boxID[2], boxID[3]);
+		rdr_log_dbg(reader, D_READER, "ncam.server BoxID: %02X%02X%02X%02X", boxID[0], boxID[1], boxID[2], boxID[3]);
 	}
 
 	if(!boxidOK)
@@ -402,10 +402,12 @@ static int32_t videoguard12_do_emm(struct s_reader *reader, EMM_PACKET *ep)
 	return videoguard_do_emm(reader, ep, 0x49, read_tiers, vg12_do_cmd);
 }
 
+#ifdef WITH_SENDCMD
 static int32_t videoguard12_do_rawcmd(struct s_reader *reader, CMD_PACKET *cp)
 {
 	return videoguard_do_rawcmd(reader, cp);
 }
+#endif
 
 static int32_t videoguard12_card_info(struct s_reader *reader)
 {
@@ -422,7 +424,9 @@ const struct s_cardsystem reader_videoguard12 =
 	.desc           = "videoguard12",
 	.caids          = (uint16_t[]){ 0x09, 0 },
 	.do_emm         = videoguard12_do_emm,
+#ifdef WITH_SENDCMD
 	.do_rawcmd      = videoguard12_do_rawcmd,
+#endif
 	.do_ecm         = videoguard12_do_ecm,
 	.card_info      = videoguard12_card_info,
 	.card_init      = videoguard12_card_init,

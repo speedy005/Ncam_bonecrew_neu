@@ -2,7 +2,7 @@
 
 #if defined(CARDREADER_STAPI) || defined(CARDREADER_STAPI5)
 #include "atr.h"
-#include "../oscam-string.h"
+#include "../ncam-string.h"
 
 /* These functions are implemented in liboscam_stapi.a */
 extern int32_t STReader_Open(char *device, uint32_t *stsmart_handle);
@@ -16,7 +16,14 @@ extern int32_t STReader_SetClockrate(uint32_t stsmart_handle);
 
 #ifdef CARDREADER_STAPI5
 /* These functions are implemented in liboscam_stapi5.a */
+#ifdef STAPI5_V03
+#define STReader_GetRevision oscam_stapi5_GetRevision
+#endif
 extern char *STReader_GetRevision(void);
+#endif
+
+#if defined(WITH_WI) && !defined(WI_OLD)
+extern char *WiSmart_Init(void);
 #endif
 
 #define OK 0
@@ -35,6 +42,10 @@ static int32_t stapi_init(struct s_reader *reader)
 
 #ifdef CARDREADER_STAPI5
 	STReader_GetRevision();
+#endif
+
+#if defined(WITH_WI) && !defined(WI_OLD)
+	WiSmart_Init();
 #endif
 
 	return STReader_Open(reader->device, &crdr_data->stapi_handle);

@@ -4,10 +4,10 @@
 */
 
 #include "../globals.h"
-#include "../oscam-string.h"
+#include "../ncam-string.h"
 
 #ifdef CARDREADER_DRECAS
-#include "../oscam-time.h"
+#include "../ncam-time.h"
 #include "icc_async.h"
 #include "ifd_drecas.h"
 #include "io_serial.h"

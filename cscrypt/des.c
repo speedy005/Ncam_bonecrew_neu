@@ -134,7 +134,7 @@
  */
 
 #include "../globals.h"
-#include "../oscam-string.h"
+#include "../ncam-string.h"
 #include "des.h"
 
 static const uint8_t weak_keys[16][8] =
@@ -590,7 +590,7 @@ static uint32_t _lrotr(uint32_t i)
 
 static void des_encrypt_int(uint32_t* data, const uint32_t* ks, int8_t do_encrypt)
 {
-	uint32_t l=0,r=0,t=0,u=0;
+	uint32_t l,r,t,u;
 	int32_t i;
 
 	u=data[0];

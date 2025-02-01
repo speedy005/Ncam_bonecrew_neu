@@ -2,13 +2,13 @@
 
 #include "globals.h"
 #ifdef MODULE_SERIAL
-#include "oscam-config.h"
-#include "oscam-client.h"
-#include "oscam-ecm.h"
-#include "oscam-net.h"
-#include "oscam-string.h"
-#include "oscam-time.h"
-#include "oscam-reader.h"
+#include "ncam-config.h"
+#include "ncam-client.h"
+#include "ncam-ecm.h"
+#include "ncam-net.h"
+#include "ncam-string.h"
+#include "ncam-time.h"
+#include "ncam-reader.h"
 
 extern int32_t exit_oscam;
 
@@ -67,13 +67,13 @@ struct s_serial_client
 	int32_t connected;
 	struct timeb tps;
 	struct timeb tpe;
-	char oscam_ser_usr[32];
-	char oscam_ser_device[64];
-	int32_t oscam_ser_port;
-	speed_t oscam_ser_baud;
-	int32_t oscam_ser_delay;
-	int32_t oscam_ser_timeout;
-	int32_t oscam_ser_proto;
+	char ncam_ser_usr[32];
+	char ncam_ser_device[64];
+	int32_t ncam_ser_port;
+	speed_t ncam_ser_baud;
+	int32_t ncam_ser_delay;
+	int32_t ncam_ser_timeout;
+	int32_t ncam_ser_proto;
 	int32_t serial_errors;
 	int32_t dsr9500type;
 	int32_t samsung_0a; // number of 0A in ALL dcw sent into samsung
@@ -145,7 +145,7 @@ static int32_t chk_ser_srvid(struct s_client *cl, uint16_t caid, uint16_t sid, u
 	return (rc);
 }
 
-static void oscam_wait_ser_fork(void)
+static void ncam_wait_ser_fork(void)
 {
 	SAFE_MUTEX_LOCK(&mutex);
 	do
@@ -162,7 +162,7 @@ static void oscam_wait_ser_fork(void)
 	SAFE_MUTEX_UNLOCK(&mutex);
 }
 
-static int32_t oscam_ser_alpha_convert(uint8_t *buf, int32_t l)
+static int32_t ncam_ser_alpha_convert(uint8_t *buf, int32_t l)
 {
 	int32_t i;
 	if(buf[0] == 0x7E) // normalize
@@ -192,16 +192,16 @@ static int32_t oscam_ser_alpha_convert(uint8_t *buf, int32_t l)
 	return (l);
 }
 
-static void oscam_ser_disconnect(void);
+static void ncam_ser_disconnect(void);
 
-static int32_t oscam_ser_parse_url(char *url, struct s_serial_client *serialdata, char *pcltype)
+static int32_t ncam_ser_parse_url(char *url, struct s_serial_client *serialdata, char *pcltype)
 {
 	char *service, *usr, *dev, *baud = NULL, *dummy, *para;
 	char cltype;
 
 	cltype = pcltype ? (*pcltype) : cur_client()->typ;
 
-	serialdata->oscam_ser_proto = P_AUTO;
+	serialdata->ncam_ser_proto = P_AUTO;
 	if((dummy = strstr(url, "://")))
 	{
 		int32_t i;
@@ -210,27 +210,27 @@ static int32_t oscam_ser_parse_url(char *url, struct s_serial_client *serialdata
 		*dummy = 0;
 		for(i = 1; i <= P_MAX; i++)
 			if(!strcmp(service, proto_txt[i]))
-				{ serialdata->oscam_ser_proto = i; }
+				{ serialdata->ncam_ser_proto = i; }
 	}
-	if(!(cltype == 'c') && (serialdata->oscam_ser_proto == P_AUTO)) { return (0); }
+	if(!(cltype == 'c') && (serialdata->ncam_ser_proto == P_AUTO)) { return (0); }
 
-	switch(serialdata->oscam_ser_proto) // set the defaults
+	switch(serialdata->ncam_ser_proto) // set the defaults
 	{
 		case P_GS:
-			serialdata->oscam_ser_timeout = 500;
-			serialdata->oscam_ser_baud = B19200;
+			serialdata->ncam_ser_timeout = 500;
+			serialdata->ncam_ser_baud = B19200;
 			break;
 
 		default:
-			serialdata->oscam_ser_timeout = 50;
+			serialdata->ncam_ser_timeout = 50;
 #ifdef B115200
-			serialdata->oscam_ser_baud = B115200;
+			serialdata->ncam_ser_baud = B115200;
 #else
-			serialdata->oscam_ser_baud = B9600;
+			serialdata->ncam_ser_baud = B9600;
 #endif
 	}
 
-	switch(serialdata->oscam_ser_proto)
+	switch(serialdata->ncam_ser_proto)
 	{
 		case P_DSR95:
 			serialdata->dsr9500type = (cltype == 'c') ? P_DSR_AUTO : P_DSR_WITHSID;
@@ -238,7 +238,7 @@ static int32_t oscam_ser_parse_url(char *url, struct s_serial_client *serialdata
 
 		case P_DSR95_OLD:
 			serialdata->dsr9500type = P_DSR_AUTO;
-			serialdata->oscam_ser_proto = P_DSR95;
+			serialdata->ncam_ser_proto = P_DSR95;
 	}
 
 	usr = url;
@@ -268,8 +268,8 @@ static int32_t oscam_ser_parse_url(char *url, struct s_serial_client *serialdata
 			if(!(ptr2 = strchr(ptr1, '='))) { continue; }
 			*ptr2++ = '\0';
 			strtolower(ptr1);
-			if(!strcmp("delay"  , ptr1)) { serialdata->oscam_ser_delay  = atoi(ptr2); }
-			if(!strcmp("timeout", ptr1)) { serialdata->oscam_ser_timeout = atoi(ptr2); }
+			if(!strcmp("delay"  , ptr1)) { serialdata->ncam_ser_delay  = atoi(ptr2); }
+			if(!strcmp("timeout", ptr1)) { serialdata->ncam_ser_timeout = atoi(ptr2); }
 		}
 	}
 
@@ -278,41 +278,41 @@ static int32_t oscam_ser_parse_url(char *url, struct s_serial_client *serialdata
 		trim(baud);
 #ifdef B115200
 		if(!strcmp(baud, "115200"))
-			{ serialdata->oscam_ser_baud = B115200; }
+			{ serialdata->ncam_ser_baud = B115200; }
 		else
 #endif
 #ifdef B57600
 			if(!strcmp(baud, "57600"))
-				{ serialdata->oscam_ser_baud = B57600; }
+				{ serialdata->ncam_ser_baud = B57600; }
 			else
 #endif
 				if(!strcmp(baud, "38400"))
-					{ serialdata->oscam_ser_baud = B38400; }
+					{ serialdata->ncam_ser_baud = B38400; }
 				else if(!strcmp(baud, "19200"))
-					{ serialdata->oscam_ser_baud = B19200; }
+					{ serialdata->ncam_ser_baud = B19200; }
 				else if(!strcmp(baud, "9600"))
-					{ serialdata->oscam_ser_baud = B9600; }
+					{ serialdata->ncam_ser_baud = B9600; }
 	}
 
 	if((para = strchr(dev, ','))) // device = ip/hostname and port
 	{
 		*para++ = '\0';
-		serialdata->oscam_ser_port = atoi(para);
+		serialdata->ncam_ser_port = atoi(para);
 	}
 	else
-		{ serialdata->oscam_ser_port = 0; }
-	cs_strncpy(serialdata->oscam_ser_usr, usr, sizeof(serialdata->oscam_ser_usr));
-	cs_strncpy(serialdata->oscam_ser_device, dev, sizeof(serialdata->oscam_ser_device));
-	return (serialdata->oscam_ser_baud);
+		{ serialdata->ncam_ser_port = 0; }
+	cs_strncpy(serialdata->ncam_ser_usr, usr, sizeof(serialdata->ncam_ser_usr));
+	cs_strncpy(serialdata->ncam_ser_device, dev, sizeof(serialdata->ncam_ser_device));
+	return (serialdata->ncam_ser_baud);
 }
 
-static void oscam_ser_set_baud(struct termios *tio, speed_t baud)
+static void ncam_ser_set_baud(struct termios *tio, speed_t baud)
 {
 	cfsetospeed(tio, baud);
 	cfsetispeed(tio, baud);
 }
 
-static int32_t oscam_ser_set_serial_device(int32_t fd, speed_t baud)
+static int32_t ncam_ser_set_serial_device(int32_t fd, speed_t baud)
 {
 	struct termios tio;
 
@@ -323,15 +323,15 @@ static int32_t oscam_ser_set_serial_device(int32_t fd, speed_t baud)
 	tio.c_cc[VMIN] = 1;
 	tio.c_cc[VTIME] = 0;
 	//#if !defined(__CYGWIN__)
-	oscam_ser_set_baud(&tio, B1200);
+	ncam_ser_set_baud(&tio, B1200);
 	tcsetattr(fd, TCSANOW, &tio);
 	cs_sleepms(500);
 	//#endif
-	oscam_ser_set_baud(&tio, baud);
+	ncam_ser_set_baud(&tio, baud);
 	return (tcsetattr(fd, TCSANOW, &tio));
 }
 
-static int32_t oscam_ser_poll(int32_t event, struct s_client *client)
+static int32_t ncam_ser_poll(int32_t event, struct s_client *client)
 {
 	int64_t msec;
 	struct pollfd pfds;
@@ -349,29 +349,29 @@ static int32_t oscam_ser_poll(int32_t event, struct s_client *client)
 		{ return (((pfds.revents)&event) == event); }
 }
 
-static int32_t oscam_ser_write(struct s_client *client, const uint8_t *const buf, int32_t n)
+static int32_t ncam_ser_write(struct s_client *client, const uint8_t *const buf, int32_t n)
 {
 	int32_t i;
-	for(i = 0; (i < n) && (oscam_ser_poll(POLLOUT, client)); i++)
+	for(i = 0; (i < n) && (ncam_ser_poll(POLLOUT, client)); i++)
 	{
-		if(client->serialdata->oscam_ser_delay)
-			{ cs_sleepms(client->serialdata->oscam_ser_delay); }
+		if(client->serialdata->ncam_ser_delay)
+			{ cs_sleepms(client->serialdata->ncam_ser_delay); }
 		if(write(client->pfd, buf + i, 1) < 1)
 			{ break; }
 	}
 	return (i);
 }
 
-static int32_t oscam_ser_send(struct s_client *client, const uint8_t *const buf, int32_t l)
+static int32_t ncam_ser_send(struct s_client *client, const uint8_t *const buf, int32_t l)
 {
 	int32_t n;
 	struct s_serial_client *serialdata = client->serialdata ;
 	if(!client->pfd) { return (0); }
 	cs_ftime(&serialdata->tps);
 	serialdata->tpe = client->serialdata->tps;
-	add_ms_to_timeb(&serialdata->tpe, serialdata->oscam_ser_timeout);
-	add_ms_to_timeb(&serialdata->tpe, (l * (serialdata->oscam_ser_delay + 1)));
-	n = oscam_ser_write(client, buf, l);
+	add_ms_to_timeb(&serialdata->tpe, serialdata->ncam_ser_timeout);
+	add_ms_to_timeb(&serialdata->tpe, (l * (serialdata->ncam_ser_delay + 1)));
+	n = ncam_ser_write(client, buf, l);
 	cs_ftime(&serialdata->tpe);
 	cs_log_dump_dbg(D_CLIENT, buf, l, "send %d of %d bytes to %s in %"PRId64" ms", n, l, remote_txt(),
 		comp_timeb(&serialdata->tpe, &serialdata->tps));
@@ -380,13 +380,13 @@ static int32_t oscam_ser_send(struct s_client *client, const uint8_t *const buf,
 	return (n);
 }
 
-static int32_t oscam_ser_selrec(uint8_t *buf, int32_t n, int32_t l, int32_t *c)
+static int32_t ncam_ser_selrec(uint8_t *buf, int32_t n, int32_t l, int32_t *c)
 {
 	int32_t i;
 	if(*c + n > l)
 		{ n = l - *c; }
 	if(n <= 0) { return (0); }
-	for(i = 0; (i < n) && (oscam_ser_poll(POLLIN, cur_client())); i++)
+	for(i = 0; (i < n) && (ncam_ser_poll(POLLIN, cur_client())); i++)
 		if(read(cur_client()->pfd, buf + *c, 1) < 1)
 			{ return (0); }
 		else
@@ -394,7 +394,7 @@ static int32_t oscam_ser_selrec(uint8_t *buf, int32_t n, int32_t l, int32_t *c)
 	return (i == n);
 }
 
-static int32_t oscam_ser_recv(struct s_client *client, uint8_t *xbuf, int32_t l)
+static int32_t ncam_ser_recv(struct s_client *client, uint8_t *xbuf, int32_t l)
 {
 	int32_t s, p, n, r;
 	uint8_t job = IS_BAD;
@@ -406,14 +406,14 @@ static int32_t oscam_ser_recv(struct s_client *client, uint8_t *xbuf, int32_t l)
 	if(!client->pfd) { return (-1); }
 	cs_ftime(&serialdata->tps);
 	serialdata->tpe = serialdata->tps;
-	add_ms_to_timeb(&serialdata->tpe, serialdata->oscam_ser_timeout);
+	add_ms_to_timeb(&serialdata->tpe, serialdata->ncam_ser_timeout);
 	buf[0] = lb;
 	for(s = p = r = 0, n = have_lb; (s < 4) && (p >= 0); s++)
 	{
 		switch(s)
 		{
 			case 0: // STAGE 0: skip known garbage from DSR9500
-				if(oscam_ser_selrec(buf, 2 - n, l, &n))
+				if(ncam_ser_selrec(buf, 2 - n, l, &n))
 				{
 					if((buf[0] == 0x0A) && (buf[1] == 0x0D))
 						{ p = (-4); }
@@ -427,12 +427,12 @@ static int32_t oscam_ser_recv(struct s_client *client, uint8_t *xbuf, int32_t l)
 
 			case 1: // STAGE 1: identify protocol
 				p = (-3);
-				if(oscam_ser_selrec(buf, 1, l, &n)) // now we have 3 bytes in buf
+				if(ncam_ser_selrec(buf, 1, l, &n)) // now we have 3 bytes in buf
 				{
 					// skip unsupported Advanced Serial Sharing Protocol HF 8900
 					if((buf[0] == 0x04) && (buf[1] == 0x00) && (buf[2] == 0x02))
 					{
-						oscam_ser_selrec(buf, 2, l, &n); // get rest 2 bytes to buffor
+						ncam_ser_selrec(buf, 2, l, &n); // get rest 2 bytes to buffor
 						p = (-4);
 						have_lb = 0;
 						break;
@@ -468,12 +468,12 @@ static int32_t oscam_ser_recv(struct s_client *client, uint8_t *xbuf, int32_t l)
 									break;
 
 								case 0x03:
-									switch(serialdata->oscam_ser_proto)
+									switch(serialdata->ncam_ser_proto)
 									{
 										case P_SSSP:
 										case P_GS:
 										case P_DSR95:
-											p = serialdata->oscam_ser_proto;
+											p = serialdata->ncam_ser_proto;
 											break;
 
 										case P_AUTO:
@@ -502,7 +502,7 @@ static int32_t oscam_ser_recv(struct s_client *client, uint8_t *xbuf, int32_t l)
 						else // HERE IS CLIENT
 						{
 							job = IS_DCW; // assume DCW
-							switch(serialdata->oscam_ser_proto)
+							switch(serialdata->ncam_ser_proto)
 							{
 								case P_HSIC :
 									if((buf[0] == 4) && (buf[1] == 4)) { p = P_HSIC; }
@@ -526,7 +526,7 @@ static int32_t oscam_ser_recv(struct s_client *client, uint8_t *xbuf, int32_t l)
 							}
 						}
 
-						if((serialdata->oscam_ser_proto != p) && (serialdata->oscam_ser_proto != P_AUTO))
+						if((serialdata->ncam_ser_proto != p) && (serialdata->ncam_ser_proto != P_AUTO))
 							{ p = (-2); }
 					}
 				}
@@ -546,7 +546,7 @@ static int32_t oscam_ser_recv(struct s_client *client, uint8_t *xbuf, int32_t l)
 							break;
 
 						case P_HSIC:
-							if(oscam_ser_selrec(buf, 12, l, &n)) { r = buf[14]; }
+							if(ncam_ser_selrec(buf, 12, l, &n)) { r = buf[14]; }
 							else { p = (-1); }
 							break;
 
@@ -558,7 +558,7 @@ static int32_t oscam_ser_recv(struct s_client *client, uint8_t *xbuf, int32_t l)
 							}
 							else
 							{
-								if(oscam_ser_selrec(buf, 16, l, &n))
+								if(ncam_ser_selrec(buf, 16, l, &n))
 								{
 									uint8_t b;
 									if(cs_atob(&b, (char *)buf + 17, 1) < 0)
@@ -577,7 +577,7 @@ static int32_t oscam_ser_recv(struct s_client *client, uint8_t *xbuf, int32_t l)
 							if(job == IS_LGO) { r = 5; }
 							else
 							{
-								if(oscam_ser_selrec(buf, 1, l, &n))
+								if(ncam_ser_selrec(buf, 1, l, &n))
 									{ r = (buf[3] << 8) | buf[2]; }
 								else { p = (-1); }
 							}
@@ -627,18 +627,18 @@ static int32_t oscam_ser_recv(struct s_client *client, uint8_t *xbuf, int32_t l)
 				if(r > 0) // read r additional bytes
 				{
 					int32_t all = n + r;
-					if(!oscam_ser_selrec(buf, r, l, &n))
+					if(!ncam_ser_selrec(buf, r, l, &n))
 					{
 						cs_log_dbg(D_CLIENT, "not all data received, waiting another 50 ms");
 						add_ms_to_timeb(&serialdata->tpe, 50);
-						if(!oscam_ser_selrec(buf, all - n, l, &n))
+						if(!ncam_ser_selrec(buf, all - n, l, &n))
 							{ p = (-1); }
 					}
 					// auto detect DSR9500 protocol
 					if(client->typ == 'c' && p == P_DSR95 && serialdata->dsr9500type == P_DSR_AUTO)
 					{
 						add_ms_to_timeb(&serialdata->tpe, 20);
-						if(oscam_ser_selrec(buf, 2, l, &n))
+						if(ncam_ser_selrec(buf, 2, l, &n))
 						{
 							if(cs_atoi((char *)buf + n - 2, 1, 1) == 0xFFFFFFFF)
 							{
@@ -659,7 +659,7 @@ static int32_t oscam_ser_recv(struct s_client *client, uint8_t *xbuf, int32_t l)
 							}
 							else
 							{
-								if(oscam_ser_selrec(buf, 2, l, &n))
+								if(ncam_ser_selrec(buf, 2, l, &n))
 									if(cs_atoi((char *)buf + n - 2, 1, 1) == 0xFFFFFFFF)
 										{ serialdata->dsr9500type = P_DSR_UNKNOWN; }
 									else
@@ -686,7 +686,7 @@ static int32_t oscam_ser_recv(struct s_client *client, uint8_t *xbuf, int32_t l)
 							switch(j)
 							{
 								case 0: // PMT head
-									if(!oscam_ser_selrec(buf, 3, l, &n))
+									if(!ncam_ser_selrec(buf, 3, l, &n))
 										{ p = (-1); }
 									else if(!(buf[n - 3] == 0x02 && (buf[n - 2] & 0xf0) == 0xb0))
 										{ p = (-2); }
@@ -694,13 +694,13 @@ static int32_t oscam_ser_recv(struct s_client *client, uint8_t *xbuf, int32_t l)
 
 								case 1: // PMT + ECM header
 									serialdata->gbox_lens.pmt_len = ((buf[n - 2] & 0xf) << 8) | buf[n - 1];
-									if(!oscam_ser_selrec(buf, serialdata->gbox_lens.pmt_len + 3, l, &n))
+									if(!ncam_ser_selrec(buf, serialdata->gbox_lens.pmt_len + 3, l, &n))
 										{ p = (-1); }
 									break;
 
 								case 2: // ECM + ECM PID
 									serialdata->gbox_lens.ecm_len = ((buf[n - 2] & 0xf) << 8) | buf[n - 1];
-									if(!oscam_ser_selrec(buf, serialdata->gbox_lens.ecm_len + 4, l, &n))
+									if(!ncam_ser_selrec(buf, serialdata->gbox_lens.ecm_len + 4, l, &n))
 										{ p = (-1); }
 							}
 						}
@@ -709,7 +709,7 @@ static int32_t oscam_ser_recv(struct s_client *client, uint8_t *xbuf, int32_t l)
 				else if(r < 0) // read until specified char (-r)
 				{
 					while((buf[n - 1] != (-r)) && (p > 0))
-						if(!oscam_ser_selrec(buf, 1, l, &n))
+						if(!ncam_ser_selrec(buf, 1, l, &n))
 							{ p = (-1); }
 				}
 				break;
@@ -718,7 +718,7 @@ static int32_t oscam_ser_recv(struct s_client *client, uint8_t *xbuf, int32_t l)
 
 	if(p == (-2) || p == (-1))
 	{
-		oscam_ser_selrec(buf, l - n, l, &n); // flush buffer
+		ncam_ser_selrec(buf, l - n, l, &n); // flush buffer
 		serialdata->serial_errors++;
 	}
 
@@ -731,14 +731,14 @@ static int32_t oscam_ser_recv(struct s_client *client, uint8_t *xbuf, int32_t l)
 		case (-1):
 			if(client->typ == 'c' && (n > 2) && (buf[0] == 2) && (buf[1] == 2) && (buf[2] == 2))
 			{
-				oscam_ser_disconnect();
+				ncam_ser_disconnect();
 				cs_log("humax powered on"); // this is nice ;)
 			}
 			else
 			{
 				if(client->typ == 'c' && buf[0] == 0x1 && buf[1] == 0x08 && buf[2] == 0x20 && buf[3] == 0x08)
 				{
-					oscam_ser_disconnect();
+					ncam_ser_disconnect();
 					cs_log("ferguson powered on"); // this is nice to ;)
 				}
 				else
@@ -759,51 +759,51 @@ static int32_t oscam_ser_recv(struct s_client *client, uint8_t *xbuf, int32_t l)
  *  server functions
  */
 
-static void oscam_ser_disconnect_client(void)
+static void ncam_ser_disconnect_client(void)
 {
 	uint8_t mbuf[1024];
 	struct s_serial_client *serialdata = cur_client()->serialdata;
 
-	switch(serialdata->connected ? serialdata->connected : serialdata->oscam_ser_proto)
+	switch(serialdata->connected ? serialdata->connected : serialdata->ncam_ser_proto)
 	{
 		case P_GS:
 			mbuf[0] = 0x01;
 			mbuf[1] = 0x00;
 			mbuf[2] = 0x00;
 			mbuf[3] = 0x00;
-			oscam_ser_send(cur_client(), mbuf, 4);
+			ncam_ser_send(cur_client(), mbuf, 4);
 			break;
 	}
 	serialdata->dsr9500type = P_DSR_AUTO;
 	serialdata->serial_errors = 0;
 }
 
-static void oscam_ser_init_client(void)
+static void ncam_ser_init_client(void)
 {
 	uint8_t mbuf[4];
-	switch(cur_client()->serialdata->oscam_ser_proto) // sure, does not work in auto-mode
+	switch(cur_client()->serialdata->ncam_ser_proto) // sure, does not work in auto-mode
 	{
 		case P_GS:
-			oscam_ser_disconnect_client(); // send disconnect first
+			ncam_ser_disconnect_client(); // send disconnect first
 			cs_sleepms(300); // wait a little bit
 			mbuf[0] = 0x00;
 			mbuf[1] = 0x00;
 			mbuf[2] = 0x00;
 			mbuf[3] = 0x00;
-			oscam_ser_send(cur_client(), mbuf, 4); // send connect
+			ncam_ser_send(cur_client(), mbuf, 4); // send connect
 			break;
 	}
 }
 
-static void oscam_ser_disconnect(void)
+static void ncam_ser_disconnect(void)
 {
-	oscam_ser_disconnect_client();
+	ncam_ser_disconnect_client();
 	if(cur_client()->serialdata->connected)
 		{ cs_log("%s disconnected (%s)", username(cur_client()), proto_txt[cur_client()->serialdata->connected]); }
 	cur_client()->serialdata->connected = 0;
 }
 
-static void oscam_ser_auth_client(int32_t proto)
+static void ncam_ser_auth_client(int32_t proto)
 {
 	int32_t ok = 0;
 	struct s_serial_client *serialdata = cur_client()->serialdata;
@@ -815,16 +815,16 @@ static void oscam_ser_auth_client(int32_t proto)
 	if(serialdata->connected == proto)
 		{ return; }
 	if(serialdata->connected)
-		{ oscam_ser_disconnect(); }
+		{ ncam_ser_disconnect(); }
 	serialdata->connected = proto;
 
 	for(ok = 0, account = cfg.account; (account) && (!ok); account = account->next)
-		if((ok = !strcmp(serialdata->oscam_ser_usr, account->usr)))
+		if((ok = !strcmp(serialdata->ncam_ser_usr, account->usr)))
 			{ break; }
 	cs_auth_client(cur_client(), ok ? account : (struct s_auth *)(-1), proto_txt[serialdata->connected]);
 }
 
-static void oscam_ser_send_dcw(struct s_client *client, ECM_REQUEST *er)
+static void ncam_ser_send_dcw(struct s_client *client, ECM_REQUEST *er)
 {
 	uint8_t mbuf[23];
 	int32_t i;
@@ -843,7 +843,7 @@ static void oscam_ser_send_dcw(struct s_client *client, ECM_REQUEST *er)
 				memcpy(mbuf + 4, er->cw, 16);
 				memcpy(mbuf + 20, &crc, 1);
 				memset(mbuf + 21, 0x1b, 2);
-				oscam_ser_send(client, mbuf, 23);
+				ncam_ser_send(client, mbuf, 23);
 				break;
 
 			case P_SSSP:
@@ -851,27 +851,27 @@ static void oscam_ser_send_dcw(struct s_client *client, ECM_REQUEST *er)
 				mbuf[1] = 0;
 				mbuf[2] = 16;
 				memcpy(mbuf + 3, er->cw, 16);
-				oscam_ser_send(client, mbuf, 19);
+				ncam_ser_send(client, mbuf, 19);
 				if(!serialdata->sssp_fix)
 				{
 					mbuf[0] = 0xF1;
 					mbuf[1] = 0;
 					mbuf[2] = 2;
 					i2b_buf(2, er->pid, mbuf + 3);
-					oscam_ser_send(client, mbuf, 5);
+					ncam_ser_send(client, mbuf, 5);
 					serialdata->sssp_fix = 1;
 				}
 				break;
 
 			case P_GBOX:
 			case P_BOMBA:
-				oscam_ser_send(client, er->cw, 16);
+				ncam_ser_send(client, er->cw, 16);
 				break;
 
 			case P_DSR95:
 				mbuf[0] = 4;
 				memcpy(mbuf + 1, er->cw, 16);
-				oscam_ser_send(client, mbuf, 17);
+				ncam_ser_send(client, mbuf, 17);
 				if(serialdata->dsr9500type == P_DSR_GNUSMAS)
 				{
 					serialdata->samsung_0a = 0;
@@ -888,7 +888,7 @@ static void oscam_ser_send_dcw(struct s_client *client, ECM_REQUEST *er)
 				mbuf[2] = 0x10;
 				mbuf[3] = 0x00;
 				memcpy(mbuf + 4, er->cw, 16);
-				oscam_ser_send(client, mbuf, 20);
+				ncam_ser_send(client, mbuf, 20);
 				break;
 
 			case P_ALPHA:
@@ -896,7 +896,7 @@ static void oscam_ser_send_dcw(struct s_client *client, ECM_REQUEST *er)
 				mbuf[1] = 0x00;
 				mbuf[2] = 0x10;
 				memcpy(mbuf + 3, er->cw, 16);
-				oscam_ser_send(client, mbuf, 19);
+				ncam_ser_send(client, mbuf, 19);
 				break;
 		}
 	}
@@ -909,14 +909,14 @@ static void oscam_ser_send_dcw(struct s_client *client, ECM_REQUEST *er)
 				mbuf[1] = 0x09;
 				mbuf[2] = 0x00;
 				mbuf[3] = 0x00;
-				oscam_ser_send(client, mbuf, 4);
+				ncam_ser_send(client, mbuf, 4);
 				break;
 		}
 	}
 	serialdata->serial_errors = 0; // clear error counter
 }
 
-static void oscam_ser_process_pmt(uint8_t *buf, int32_t l)
+static void ncam_ser_process_pmt(uint8_t *buf, int32_t l)
 {
 	int32_t i;
 	uint8_t sbuf[32];
@@ -932,7 +932,7 @@ static void oscam_ser_process_pmt(uint8_t *buf, int32_t l)
 
 			for(i = 9; (i < l) && (serialdata->sssp_num < SSSP_MAX_PID); i += 7)
 			{
-				// check support for pid (caid, sid and provid in oscam.services)
+				// check support for pid (caid, sid and provid in ncam.services)
 				if(chk_ser_srvid(cur_client(), b2i(2, buf + i), b2i(2, buf + 3), b2i(3, buf + i + 4)))
 				{
 					memcpy(sbuf + 3 + (serialdata->sssp_num << 1), buf + i + 2, 2);
@@ -946,12 +946,12 @@ static void oscam_ser_process_pmt(uint8_t *buf, int32_t l)
 			sbuf[0] = 0xF1;
 			sbuf[1] = 0;
 			sbuf[2] = (serialdata->sssp_num << 1);
-			oscam_ser_send(cur_client(), sbuf, sbuf[2] + 3);
+			ncam_ser_send(cur_client(), sbuf, sbuf[2] + 3);
 			break;
 	}
 }
 
-static void oscam_ser_client_logon(uint8_t *buf, int32_t l)
+static void ncam_ser_client_logon(uint8_t *buf, int32_t l)
 {
 	uint8_t gs_logon[] = {0, 1, 0, 0, 2, 1, 0, 0};
 
@@ -964,13 +964,13 @@ static void oscam_ser_client_logon(uint8_t *buf, int32_t l)
 				buf[1] = 0x04;
 				buf[2] = 0x00;
 				buf[3] = 0x00;
-				oscam_ser_send(cur_client(), buf, 4);
+				ncam_ser_send(cur_client(), buf, 4);
 			}
 			break;
 	}
 }
 
-static int32_t oscam_ser_check_ecm(ECM_REQUEST *er, uint8_t *buf, int32_t l)
+static int32_t ncam_ser_check_ecm(ECM_REQUEST *er, uint8_t *buf, int32_t l)
 {
 	int32_t i;
 	struct s_serial_client *serialdata = cur_client()->serialdata;
@@ -1054,7 +1054,7 @@ static int32_t oscam_ser_check_ecm(ECM_REQUEST *er, uint8_t *buf, int32_t l)
 			break;
 
 		case P_ALPHA:
-			l = oscam_ser_alpha_convert(buf, l);
+			l = ncam_ser_alpha_convert(buf, l);
 			er->ecmlen = b2i(2, buf + 1) - 2;
 			er->caid = b2i(2, buf + 3);
 			if((er->ecmlen != l - 5) || (er->ecmlen > MAX_ECM_SIZE) || (er->ecmlen < 0))
@@ -1085,14 +1085,14 @@ static int32_t oscam_ser_check_ecm(ECM_REQUEST *er, uint8_t *buf, int32_t l)
 	return (0);
 }
 
-static void oscam_ser_process_ecm(uint8_t *buf, int32_t l)
+static void ncam_ser_process_ecm(uint8_t *buf, int32_t l)
 {
 	ECM_REQUEST *er;
 
 	if(!(er = get_ecmtask()))
 		{ return; }
 
-	switch(oscam_ser_check_ecm(er, buf, l))
+	switch(ncam_ser_check_ecm(er, buf, l))
 	{
 		default:
 		case 3:
@@ -1108,14 +1108,14 @@ static void oscam_ser_process_ecm(uint8_t *buf, int32_t l)
 }
 
 
-static void oscam_ser_server(void)
+static void ncam_ser_server(void)
 {
 	int32_t n;
 	uint8_t mbuf[1024];
 	int32_t *pserial_errors = &cur_client()->serialdata->serial_errors;
 
 	cur_client()->serialdata->connected = 0;
-	oscam_ser_init_client();
+	ncam_ser_init_client();
 
 	while((n = process_input(mbuf, sizeof(mbuf), INT_MAX)) > 0)
 	{
@@ -1125,31 +1125,31 @@ static void oscam_ser_server(void)
 			break;
 		}
 
-		oscam_ser_auth_client(mbuf[0] & 0xF);
+		ncam_ser_auth_client(mbuf[0] & 0xF);
 		switch(mbuf[0] >> 4)
 		{
 			case IS_ECM:
-				oscam_ser_process_ecm(mbuf + 1, n - 1);
+				ncam_ser_process_ecm(mbuf + 1, n - 1);
 				break;
 			case IS_PMT:
-				oscam_ser_process_pmt(mbuf + 1, n - 1);
+				ncam_ser_process_pmt(mbuf + 1, n - 1);
 				break;
 			case IS_LGO:
-				oscam_ser_client_logon(mbuf + 1, n - 1);
+				ncam_ser_client_logon(mbuf + 1, n - 1);
 				break;
 		}
 	}
 
-	if(cur_client()->serialdata->oscam_ser_port > 0)
+	if(cur_client()->serialdata->ncam_ser_port > 0)
 		{ network_tcp_connection_close(cur_client()->reader, "error reading from socket"); }
-	oscam_ser_disconnect();
+	ncam_ser_disconnect();
 }
 
-static int32_t init_oscam_ser_device(struct s_client *cl)
+static int32_t init_ncam_ser_device(struct s_client *cl)
 {
-	char *device = cl->serialdata->oscam_ser_device;
-	speed_t baud = cl->serialdata->oscam_ser_baud;
-	int32_t port = cl->serialdata->oscam_ser_port;
+	char *device = cl->serialdata->ncam_ser_device;
+	speed_t baud = cl->serialdata->ncam_ser_baud;
+	int32_t port = cl->serialdata->ncam_ser_port;
 	int32_t fd;
 
 	// network connection to a TCP-exposed serial port
@@ -1169,7 +1169,7 @@ static int32_t init_oscam_ser_device(struct s_client *cl)
 		if(fd > 0)
 		{
 			fcntl(fd, F_SETFL, 0);
-			if(oscam_ser_set_serial_device(fd, baud) < 0) { cs_log("ERROR ioctl"); }
+			if(ncam_ser_set_serial_device(fd, baud) < 0) { cs_log("ERROR ioctl"); }
 			if(tcflush(fd, TCIOFLUSH) < 0) { cs_log("ERROR flush"); }
 		}
 		else
@@ -1181,20 +1181,20 @@ static int32_t init_oscam_ser_device(struct s_client *cl)
 	}
 }
 
-static void oscam_copy_serialdata(struct s_serial_client *dest, struct s_serial_client *src)
+static void ncam_copy_serialdata(struct s_serial_client *dest, struct s_serial_client *src)
 {
 	if(dest && src)
 	{
 		dest->connected = src->connected;
 		memcpy(&dest->tps, &src->tps, sizeof(dest->tps));
 		memcpy(&dest->tpe, &src->tpe, sizeof(dest->tpe));
-		memcpy(&dest->oscam_ser_usr, &src->oscam_ser_usr, sizeof(dest->oscam_ser_usr));
-		memcpy(&dest->oscam_ser_device, &src->oscam_ser_device, sizeof(dest->oscam_ser_device));
-		dest->oscam_ser_port = src->oscam_ser_port;
-		dest->oscam_ser_baud = src->oscam_ser_baud;
-		dest->oscam_ser_delay = src->oscam_ser_delay;
-		dest->oscam_ser_timeout = src->oscam_ser_timeout;
-		dest->oscam_ser_proto = src->oscam_ser_proto;
+		memcpy(&dest->ncam_ser_usr, &src->ncam_ser_usr, sizeof(dest->ncam_ser_usr));
+		memcpy(&dest->ncam_ser_device, &src->ncam_ser_device, sizeof(dest->ncam_ser_device));
+		dest->ncam_ser_port = src->ncam_ser_port;
+		dest->ncam_ser_baud = src->ncam_ser_baud;
+		dest->ncam_ser_delay = src->ncam_ser_delay;
+		dest->ncam_ser_timeout = src->ncam_ser_timeout;
+		dest->ncam_ser_proto = src->ncam_ser_proto;
 		dest->serial_errors = src->serial_errors;
 		dest->dsr9500type = src->dsr9500type;
 		dest->samsung_0a = src->samsung_0a; // number of 0A in ALL dcw sent into samsung
@@ -1208,17 +1208,17 @@ static void oscam_copy_serialdata(struct s_serial_client *dest, struct s_serial_
 	}
 }
 
-static void oscam_init_serialdata(struct s_serial_client *dest)
+static void ncam_init_serialdata(struct s_serial_client *dest)
 {
 	if(dest)
 	{
 		memset(dest, 0, sizeof(struct s_serial_client));
-		dest->oscam_ser_timeout = 50;
+		dest->ncam_ser_timeout = 50;
 		dest->dsr9500type = P_DSR_AUTO;
 	}
 }
 
-static void *oscam_ser_fork(void *pthreadparam)
+static void *ncam_ser_fork(void *pthreadparam)
 {
 	struct s_thread_param *pparam = (struct s_thread_param *) pthreadparam;
 	struct s_client *cl = create_client(get_null_ip());
@@ -1232,10 +1232,10 @@ static void *oscam_ser_fork(void *pthreadparam)
 		{ return NULL; }
 
 	set_thread_name(__func__);
-	oscam_init_serialdata(cl->serialdata);
-	oscam_copy_serialdata(cl->serialdata, &pparam->serialdata);
+	ncam_init_serialdata(cl->serialdata);
+	ncam_copy_serialdata(cl->serialdata, &pparam->serialdata);
 
-	if(cl->serialdata->oscam_ser_port > 0)
+	if(cl->serialdata->ncam_ser_port > 0)
 	{
 		// reader struct for serial network connection
 		struct s_reader *newrdr;
@@ -1248,8 +1248,8 @@ static void *oscam_ser_fork(void *pthreadparam)
 		cs_strncpy(cl->reader->label, "network-socket", sizeof(cl->reader->label));
 	}
 
-	cs_log("serial: initialized (%s@%s)", cl->serialdata->oscam_ser_proto > P_MAX ?
-		"auto" : proto_txt[cl->serialdata->oscam_ser_proto], cl->serialdata->oscam_ser_device);
+	cs_log("serial: initialized (%s@%s)", cl->serialdata->ncam_ser_proto > P_MAX ?
+		"auto" : proto_txt[cl->serialdata->ncam_ser_proto], cl->serialdata->ncam_ser_device);
 
 	SAFE_MUTEX_LOCK(&mutex);
 	bcopy_end = 1;
@@ -1259,9 +1259,9 @@ static void *oscam_ser_fork(void *pthreadparam)
 	while(!exit_oscam)
 	{
 		cl->login = time((time_t *)0);
-		cl->pfd = init_oscam_ser_device(cl);
+		cl->pfd = init_ncam_ser_device(cl);
 		if(cl->pfd)
-			{ oscam_ser_server(); }
+			{ ncam_ser_server(); }
 		else
 			{ cs_sleepms(60000); } // retry in 1 min. (USB-Device ?)
 		if(cl->pfd) { close(cl->pfd); }
@@ -1271,12 +1271,12 @@ static void *oscam_ser_fork(void *pthreadparam)
 	return NULL;
 }
 
-void *init_oscam_ser(struct s_client *UNUSED(cl), uint8_t *UNUSED(mbuf), int32_t module_idx)
+void *init_ncam_ser(struct s_client *UNUSED(cl), uint8_t *UNUSED(mbuf), int32_t module_idx)
 {
 	char sdevice[512];
 	int32_t ret;
 	struct s_thread_param param;
-	oscam_init_serialdata(&param.serialdata);
+	ncam_init_serialdata(&param.serialdata);
 
 	if(cfg.ser_device)
 		{ cs_strncpy(sdevice, cfg.ser_device, sizeof(sdevice)); }
@@ -1299,30 +1299,30 @@ void *init_oscam_ser(struct s_client *UNUSED(cl), uint8_t *UNUSED(mbuf), int32_t
 		q = p;
 		q = q + 1;
 		if(!(q) || (!(q)[0])) { return NULL; }
-		if(!oscam_ser_parse_url(p + 1, &param.serialdata, &cltype)) { return NULL; }
+		if(!ncam_ser_parse_url(p + 1, &param.serialdata, &cltype)) { return NULL; }
 
-		ret = start_thread("oscam_ser_fork", oscam_ser_fork, (void *) &param, NULL, 1, 1);
+		ret = start_thread("ncam_ser_fork", ncam_ser_fork, (void *) &param, NULL, 1, 1);
 		if(ret)
 		{
 			return NULL;
 		}
 		else
 		{
-			oscam_wait_ser_fork();
+			ncam_wait_ser_fork();
 		}
 	}
 
 	if(!sdevice[0]) { return NULL; }
-	if(!oscam_ser_parse_url(sdevice, &param.serialdata, &cltype)) { return NULL; }
+	if(!ncam_ser_parse_url(sdevice, &param.serialdata, &cltype)) { return NULL; }
 
-	ret = start_thread("oscam_ser_fork", oscam_ser_fork, (void *) &param, NULL, 1, 1);
+	ret = start_thread("ncam_ser_fork", ncam_ser_fork, (void *) &param, NULL, 1, 1);
 	if(ret)
 	{
 		return NULL;
 	}
 	else
 	{
-		oscam_wait_ser_fork();
+		ncam_wait_ser_fork();
 	}
 	return NULL;
 }
@@ -1331,18 +1331,18 @@ void *init_oscam_ser(struct s_client *UNUSED(cl), uint8_t *UNUSED(mbuf), int32_t
  *  client functions
  */
 
-static int32_t oscam_ser_client_init(struct s_client *client)
+static int32_t ncam_ser_client_init(struct s_client *client)
 {
 	if(!client->serialdata && !cs_malloc(&client->serialdata, sizeof(struct s_serial_client)))
 		{ return 1; }
 
-	oscam_init_serialdata(client->serialdata);
+	ncam_init_serialdata(client->serialdata);
 
 	if((!client->reader->device[0])) { cs_disconnect_client(client); }
-	if(!oscam_ser_parse_url(client->reader->device, client->serialdata, NULL)) { cs_disconnect_client(client); }
-	client->pfd = init_oscam_ser_device(client);
+	if(!ncam_ser_parse_url(client->reader->device, client->serialdata, NULL)) { cs_disconnect_client(client); }
+	client->pfd = init_ncam_ser_device(client);
 
-	if(client->serialdata->oscam_ser_proto == P_TWIN)
+	if(client->serialdata->ncam_ser_proto == P_TWIN)
 	{
 		if(client->pfd > 0)
 		{
@@ -1354,7 +1354,7 @@ static int32_t oscam_ser_client_init(struct s_client *client)
 	return ((client->pfd > 0) ? 0 : 1);
 }
 
-static int32_t oscam_ser_twin_send(struct s_client *client, ECM_REQUEST *er)
+static int32_t ncam_ser_twin_send(struct s_client *client, ECM_REQUEST *er)
 {
 	struct ecmtw tw;
 	tw = get_twin(er);
@@ -1369,11 +1369,11 @@ static int32_t oscam_ser_twin_send(struct s_client *client, ECM_REQUEST *er)
 	wbuf[6] = tw.srvid >> 8;
 	wbuf[7] = tw.srvid & 0xff;
 	wbuf[8] = wbuf[0] ^ wbuf[1] ^ wbuf[2] ^ wbuf[3] ^ wbuf[4] ^ wbuf[5] ^ wbuf[6] ^ wbuf[7];
-	oscam_ser_send(client, wbuf, 9);
+	ncam_ser_send(client, wbuf, 9);
 	return(0);
 }
 
-static int32_t oscam_ser_send_ecm(struct s_client *client, ECM_REQUEST *er)
+static int32_t ncam_ser_send_ecm(struct s_client *client, ECM_REQUEST *er)
 {
 	char *tmp;
 	uint8_t *buf;
@@ -1382,7 +1382,7 @@ static int32_t oscam_ser_send_ecm(struct s_client *client, ECM_REQUEST *er)
 		return(-1);
 	}
 
-	switch(client->serialdata->oscam_ser_proto)
+	switch(client->serialdata->ncam_ser_proto)
 	{
 		case P_HSIC:
 			memset(buf, 0, 12);
@@ -1392,11 +1392,11 @@ static int32_t oscam_ser_send_ecm(struct s_client *client, ECM_REQUEST *er)
 			i2b_buf(2, er->pid, buf + 6);
 			i2b_buf(2, er->srvid, buf + 10);
 			memcpy(buf + 12, er->ecm, er->ecmlen);
-			oscam_ser_send(client, buf, 12 + er->ecmlen);
+			ncam_ser_send(client, buf, 12 + er->ecmlen);
 			break;
 
 		case P_BOMBA:
-			oscam_ser_send(client, er->ecm, er->ecmlen);
+			ncam_ser_send(client, er->ecm, er->ecmlen);
 			break;
 
 		case P_DSR95:
@@ -1406,13 +1406,13 @@ static int32_t oscam_ser_send_ecm(struct s_client *client, ECM_REQUEST *er)
 				{
 					snprintf((char *)buf, 512, "%c%08X%04X%s%04X\n\r",
 						3, er->prid, er->caid, cs_hexdump(0, er->ecm, er->ecmlen, tmp, er->ecmlen * 2 + 1), er->srvid);
-					oscam_ser_send(client, buf, (er->ecmlen << 1) + 19); // 1 + 8 + 4 + l*2 + 4 + 2
+					ncam_ser_send(client, buf, (er->ecmlen << 1) + 19); // 1 + 8 + 4 + l*2 + 4 + 2
 				}
 				else
 				{
 					snprintf((char *)buf, 512, "%c%08X%04X%s\n\r",
 							3, er->prid, er->caid, cs_hexdump(0, er->ecm, er->ecmlen, tmp, er->ecmlen * 2 + 1));
-					oscam_ser_send(client, buf, (er->ecmlen << 1) + 15); // 1 + 8 + 4 + l*2 + 2
+					ncam_ser_send(client, buf, (er->ecmlen << 1) + 15); // 1 + 8 + 4 + l*2 + 2
 				}
 				NULLFREE(tmp);
 			}
@@ -1423,20 +1423,20 @@ static int32_t oscam_ser_send_ecm(struct s_client *client, ECM_REQUEST *er)
 			i2b_buf(2, 2 + er->ecmlen, buf + 1);
 			i2b_buf(2, er->caid, buf + 3);
 			memcpy(buf + 5, er->ecm, er->ecmlen);
-			oscam_ser_send(client, buf, oscam_ser_alpha_convert(buf, 5 + er->ecmlen));
+			ncam_ser_send(client, buf, ncam_ser_alpha_convert(buf, 5 + er->ecmlen));
 			break;
 
 		case P_TWIN:
-			oscam_ser_twin_send(client, er);
+			ncam_ser_twin_send(client, er);
 			break;
 	}
 	NULLFREE(buf);
 	return (0);
 }
 
-static void oscam_ser_process_dcw(uint8_t *dcw, int32_t *rc, uint8_t *buf, int32_t l, struct s_client *client)
+static void ncam_ser_process_dcw(uint8_t *dcw, int32_t *rc, uint8_t *buf, int32_t l, struct s_client *client)
 {
-	switch(client->serialdata->oscam_ser_proto)
+	switch(client->serialdata->ncam_ser_proto)
 	{
 		case P_HSIC:
 			if((l >= 23) && (buf[2] == 0x3A) && (buf[3] == 0x3A))
@@ -1486,14 +1486,14 @@ static void oscam_ser_process_dcw(uint8_t *dcw, int32_t *rc, uint8_t *buf, int32
 	}
 }
 
-static int32_t oscam_ser_recv_chk(struct s_client *client, uint8_t *dcw, int32_t *rc, uint8_t *buf, int32_t n)
+static int32_t ncam_ser_recv_chk(struct s_client *client, uint8_t *dcw, int32_t *rc, uint8_t *buf, int32_t n)
 {
 	*rc = (-1);
 
 	switch(buf[0] >> 4)
 	{
 		case IS_DCW:
-			oscam_ser_process_dcw(dcw, rc, buf + 1, n - 1, client);
+			ncam_ser_process_dcw(dcw, rc, buf + 1, n - 1, client);
 			break;
 	}
 	return ((*rc < 0) ? (-1) : 0); // idx not supported in serial module
@@ -1509,12 +1509,12 @@ void module_serial(struct s_module *ph)
 	ph->type = MOD_CONN_SERIAL;
 	ph->large_ecm_support = 1;
 	ph->listenertype = LIS_SERIAL;
-	ph->s_handler = init_oscam_ser;
-	ph->recv = oscam_ser_recv;
-	ph->send_dcw = oscam_ser_send_dcw;
-	ph->c_init = oscam_ser_client_init;
-	ph->c_recv_chk = oscam_ser_recv_chk;
-	ph->c_send_ecm = oscam_ser_send_ecm;
+	ph->s_handler = init_ncam_ser;
+	ph->recv = ncam_ser_recv;
+	ph->send_dcw = ncam_ser_send_dcw;
+	ph->c_init = ncam_ser_client_init;
+	ph->c_recv_chk = ncam_ser_recv_chk;
+	ph->c_send_ecm = ncam_ser_send_ecm;
 	ph->num = R_SERIAL;
 	serial_ph = ph;
 }

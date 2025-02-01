@@ -1,6 +1,6 @@
 #include "globals.h"
 #ifdef READER_IRDETO
-#include "oscam-time.h"
+#include "ncam-time.h"
 #include "reader-common.h"
 #include "reader-irdeto.h"
 
@@ -269,7 +269,7 @@ static int32_t irdeto_card_init_provider(struct s_reader *reader)
 			reader->prid[i][4] = p++;
 
 			// maps the provider id for Betacrypt from FFFFFF to 000000,
-			// fixes problems with cascading CCcam and OSCam
+			// fixes problems with cascading CCcam and NCam
 			if(caid_is_betacrypt(reader->caid))
 			{
 				memset(&reader->prid[i][0], 0, 4);
@@ -527,7 +527,7 @@ static int32_t irdeto_card_init(struct s_reader *reader, ATR *newatr)
 			rc = reader_cmd2icc(reader, sc_T14GetCamKey383C, sizeof(sc_T14GetCamKey383C), cta_res, &cta_lr);
 		}
 		rdr_log_dbg(reader, D_READER, "SmargoV2 camkey exchange containment: Ignoring returncode (%d), should have been 0.", rc);
-		rdr_log_dbg(reader, D_READER, "In case cardinit NOK and/or no entitlements, retry by restarting oscam.");
+		rdr_log_dbg(reader, D_READER, "In case cardinit NOK and/or no entitlements, retry by restarting ncam.");
 	} // end dirty hack
 	else
 	{
@@ -543,7 +543,7 @@ static int32_t irdeto_card_init(struct s_reader *reader, ATR *newatr)
 
 	if(((reader->cardmhz != 600) && (reader->typ != R_INTERNAL)) || ((reader->typ == R_INTERNAL) && ((reader->mhz < 510) || (reader->cardmhz > 690))))
 	{
-		rdr_log(reader, "WARNING: For Irdeto cards you will have to set '%s= 600' in oscam.server", (reader->typ == R_INTERNAL ? "mhz" : "cardmhz") );
+		rdr_log(reader, "WARNING: For Irdeto cards you will have to set '%s= 600' in ncam.server", (reader->typ == R_INTERNAL ? "mhz" : "cardmhz") );
 	}
 
 	return irdeto_card_init_provider(reader);

@@ -1,21 +1,21 @@
 #define MODULE_LOG_PREFIX "camd35"
 
 #include "globals.h"
-#include "oscam-array.h"
+#include "ncam-array.h"
 
 #if defined(CS_CACHEEX) && (defined(MODULE_CAMD35) || defined(MODULE_CAMD35_TCP))
 
 #include "module-cacheex.h"
 #include "module-camd35.h"
 #include "module-camd35-cacheex.h"
-#include "oscam-cache.h"
-#include "oscam-client.h"
-#include "oscam-ecm.h"
-#include "oscam-string.h"
-#include "oscam-reader.h"
+#include "ncam-cache.h"
+#include "ncam-client.h"
+#include "ncam-ecm.h"
+#include "ncam-string.h"
+#include "ncam-reader.h"
 #ifdef CS_CACHEEX_AIO
-#include "oscam-chk.h"
-#include "oscam-config.h"
+#include "ncam-chk.h"
+#include "ncam-config.h"
 #endif
 
 uint8_t camd35_node_id[8];
@@ -670,7 +670,7 @@ void camd35_cacheex_feature_trigger(struct s_client *cl, int32_t feature, uint8_
 			if(size < 32)
 				size = 32;
 
-			uint8_t token[14];
+			uint8_t token[12];
 
 			// bitfield
 			i2b_buf(2, feature, payload + i);
@@ -1186,7 +1186,7 @@ static int32_t camd35_cacheex_push_out(struct s_client *cl, struct ecm_request_t
 
 	uint8_t *ofs = buf + 20;
 
-	//write oscam ecmd5:
+	//write ncam ecmd5:
 	memcpy(ofs, er->ecmd5, sizeof(er->ecmd5)); //16
 	ofs += sizeof(er->ecmd5);
 

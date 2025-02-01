@@ -801,8 +801,6 @@ void block_connect(struct s_reader *rdr)
 	add_ms_to_timeb(&rdr->tcp_block_connect_till, rdr->tcp_block_delay);
 	rdr->tcp_block_delay *= 4; // increment timeouts
 
-	if(rdr->tcp_block_delay >= rdr->tcp_reconnect_delay)
-		{ rdr->tcp_block_delay = rdr->tcp_reconnect_delay; }
 
 	rdr_log_dbg(rdr, D_TRACE, "tcp connect blocking delay set to %d", rdr->tcp_block_delay);
 }

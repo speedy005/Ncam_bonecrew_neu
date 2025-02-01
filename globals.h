@@ -117,7 +117,7 @@
 // introduced some proprietary API is not going to happen.
 #if defined(__APPLE__)
 #define __AVAILABILITY_MACROS_USES_AVAILABILITY 0
-#define MAC_OS_X_VERSION_MIN_REQUIRED MAC_OS_X_VERSION_02_6
+#define MAC_OS_X_VERSION_MIN_REQUIRED MAC_OS_X_VERSION_10_6
 #endif
 
 #include "cscrypt/aes.h"

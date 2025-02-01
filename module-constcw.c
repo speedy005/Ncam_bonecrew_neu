@@ -3,10 +3,10 @@
 //FIXME Not checked on threadsafety yet; after checking please remove this line
 #include "globals.h"
 #ifdef MODULE_CONSTCW
-#include "oscam-client.h"
-#include "oscam-ecm.h"
-#include "oscam-net.h"
-#include "oscam-string.h"
+#include "ncam-client.h"
+#include "ncam-ecm.h"
+#include "ncam-net.h"
+#include "ncam-string.h"
 
 static int32_t pserver;
 
@@ -105,7 +105,7 @@ int32_t constcw_client_init(struct s_client *client)
 	memset((char *) &client->udp_sa, 0, sizeof(client->udp_sa));
 	SIN_GET_FAMILY(client->udp_sa) = AF_INET;
 
-	// Oscam has no reader.au in s_reader like ki's mpcs ;)
+	// NCam has no reader.au in s_reader like ki's mpcs ;)
 	// reader[ridx].au = 0;
 	// cs_log("local reader: %s (file: %s) constant cw au=0", reader[ridx].label, reader[ridx].device);
 	cs_log("Local reader: %s (file: %s)", client->reader->label, client->reader->device);

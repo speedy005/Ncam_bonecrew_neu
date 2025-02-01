@@ -5,10 +5,10 @@
 #ifdef MODULE_PANDORA
 
 #include "cscrypt/md5.h"
-#include "oscam-client.h"
-#include "oscam-ecm.h"
-#include "oscam-net.h"
-#include "oscam-string.h"
+#include "ncam-client.h"
+#include "ncam-ecm.h"
+#include "ncam-net.h"
+#include "ncam-string.h"
 
 #define CWS_NETMSGSIZE 320
 #define START_TIME 150000

@@ -6,14 +6,14 @@
 #include "module-gbox-remm.h"
 #include "module-gbox.h"
 #include "module-gbox-helper.h"
-#include "oscam-string.h"
-#include "oscam-client.h"
-#include "oscam-lock.h"
-#include "oscam-time.h"
-#include "oscam-reader.h"
-#include "oscam-files.h"
+#include "ncam-string.h"
+#include "ncam-client.h"
+#include "ncam-lock.h"
+#include "ncam-time.h"
+#include "ncam-reader.h"
+#include "ncam-files.h"
 #include "module-dvbapi.h"
-#include "oscam-emm.h"
+#include "ncam-emm.h"
 
 static void gbox_send_remm_ack_msg(struct s_client *cli, uint16_t caid, uint32_t provider, uint8_t dvbapi_stat, uint8_t ack)
 {

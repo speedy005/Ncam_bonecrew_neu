@@ -16,34 +16,35 @@
 #define DVBAPI_1    1
 #define STAPI       2
 #define COOLAPI     3
+#define GXAPI       4
 
 #ifdef __CYGWIN__
 #define TMPDIR          "./"
-#define STANDBY_FILE    "./.pauseoscam"
+#define STANDBY_FILE    "./.pausencam"
 #define ECMINFO_FILE    "./ecm.info"
 #else
 #define TMPDIR          "/tmp/"
-#define STANDBY_FILE    "/tmp/.pauseoscam"
+#define STANDBY_FILE    "/tmp/.pausencam"
 #define ECMINFO_FILE    "/tmp/ecm.info"
 #endif
 
-#define BOX_COUNT 7
+#define BOX_COUNT 8
 
 #define BOXTYPE_DREAMBOX    1
-#define BOXTYPE_DUCKBOX     2
-#define BOXTYPE_UFS910      3
-#define BOXTYPE_DBOX2       4
-#define BOXTYPE_IPBOX       5
+#define BOXTYPE_DUCKBOX 2
+#define BOXTYPE_UFS910  3
+#define BOXTYPE_DBOX2   4
+#define BOXTYPE_IPBOX   5
 #define BOXTYPE_IPBOX_PMT   6
-#define BOXTYPE_DM7000      7
-#define BOXTYPE_QBOXHD      8
+#define BOXTYPE_DM7000  7
+#define BOXTYPE_QBOXHD  8
 #define BOXTYPE_COOLSTREAM  9
-#define BOXTYPE_NEUMO      10
-#define BOXTYPE_PC         11
-#define BOXTYPE_PC_NODMX   12
-#define BOXTYPE_SAMYGO     13
-#define BOXTYPES           13
-#define DMXMD5HASHSIZE     16 // use MD5()
+#define BOXTYPE_NEUMO   10
+#define BOXTYPE_PC      11
+#define BOXTYPE_PC_NODMX    12
+#define BOXTYPE_SAMYGO  13
+#define BOXTYPES        13
+#define DMXMD5HASHSIZE  16  // use MD5() 
 
 // we store the results of remove_streampid_from_list()
 // and update_streampid_list() in one variable, so make sure
@@ -85,7 +86,7 @@
 #define DVBAPI_DMX_SET_FILTER     0x403C6F2B
 
 #define DVBAPI_AOT_CA             0x9F803000
-#define DVBAPI_AOT_CA_PMT         0x9F803200 // least significant byte is length (ignored)
+#define DVBAPI_AOT_CA_PMT         0x9F803200  //least significant byte is length (ignored)
 #define DVBAPI_AOT_CA_STOP        0x9F803F04
 #define DVBAPI_FILTER_DATA        0xFFFF0000
 #define DVBAPI_CLIENT_INFO        0xFFFF0001
@@ -133,21 +134,21 @@
 										// not allowed to start descrambling or MMI dialogue before reception of a new
 										// CA PMT object with "ca_pmt_cmd_id" set to "ok_descrambling or "ok_mmi".
 
-#define CA_PMT_CMD_NOT_SELECTED    0x04 // It indicates to the CA application that the host no longer requires that CA
+#define CA_PMT_CMD_NOT_SELECTED     0x04 // It indicates to the CA application that the host no longer requires that CA
 										// application to attempt to descramble the service. The CA application shall
 										// close any MMI dialogue it has opened.
 //----------------
 // ca descriptors
 //----------------
 
-#define CA			     		   		0x09
-#define ENIGMA_NAMESPACE				0x81
-#define DEMUX_CA_MASK_ADAPTER			0x82 // deprecated - applications should use descriptors ADAPTER_DEVICE, DEMUX_DEVICE and CA_DEVICE instead
-#define ADAPTER_DEVICE					0x83
-#define PMT_PID							0x84
-#define SERVICE_TYPE_MASK				0x85 // not used by OSCam
-#define DEMUX_DEVICE					0x86
-#define CA_DEVICE						0x87
+#define CA                              0x09
+#define ENIGMA_NAMESPACE                0x81
+#define DEMUX_CA_MASK_ADAPTER           0x82 // deprecated - applications should use descriptors ADAPTER_DEVICE, DEMUX_DEVICE and CA_DEVICE instead
+#define ADAPTER_DEVICE                  0x83
+#define PMT_PID                         0x84
+#define SERVICE_TYPE_MASK               0x85 // not used by NCam
+#define DEMUX_DEVICE                    0x86
+#define CA_DEVICE                       0x87
 
 //-----------------------------------------------------------------------------
 // api used for internal device communication
@@ -160,16 +161,16 @@
 
 typedef struct dmxFilter
 {
-	uint8_t filter[DMX_FILTER_SIZE];
-	uint8_t mask[DMX_FILTER_SIZE];
+    uint8_t filter[DMX_FILTER_SIZE];
+    uint8_t mask[DMX_FILTER_SIZE];
 } dmxFilter_t;
 
 struct dmxSctFilterParams
 {
-	uint16_t    pid;
-	dmxFilter_t filter;
-	uint32_t    timeout;
-	uint32_t    flags;
+    uint16_t    pid;
+    dmxFilter_t filter;
+    uint32_t    timeout;
+    uint32_t    flags;
 
 #define DMX_CHECK_CRC       1
 #define DMX_ONESHOT         2
@@ -186,17 +187,17 @@ struct dmxSctFilterParams
 
 typedef struct dmx_filter
 {
-	uint8_t filter[DMX_FILTER_SIZE];
-	uint8_t mask[DMX_FILTER_SIZE];
-	uint8_t mode[DMX_FILTER_SIZE];
+    uint8_t filter[DMX_FILTER_SIZE];
+    uint8_t mask[DMX_FILTER_SIZE];
+    uint8_t mode[DMX_FILTER_SIZE];
 } dmx_filter_t;
 
 struct dmx_sct_filter_params
 {
-	uint16_t     pid;
-	dmx_filter_t filter;
-	uint32_t     timeout;
-	uint32_t     flags;
+    uint16_t     pid;
+    dmx_filter_t filter;
+    uint32_t     timeout;
+    uint32_t     flags;
 
 #define DMX_CHECK_CRC       1
 #define DMX_ONESHOT         2
@@ -213,35 +214,35 @@ struct dmx_sct_filter_params
 
 typedef struct ca_descr_info
 {
-	uint32_t num;
-	uint32_t type; /* bitmask: 1 == ECD, 2 == NDS, 4 == DDS */
+    uint32_t num;
+    uint32_t type; /* bitmask: 1 == ECD, 2 == NDS, 4 == DDS */
 } ca_descr_info_t;
 
 typedef struct ca_descr
 {
-	uint32_t index;
-	uint32_t parity; /* 0 == even, 1 == odd */
-	uint8_t cw[8];
+    uint32_t index;
+    uint32_t parity; /* 0 == even, 1 == odd */
+    uint8_t cw[8];
 } ca_descr_t;
 
 // ca_pid has been removed from the api, but we still use it
 typedef struct ca_pid
 {
-	uint32_t pid;
-	int32_t index; /* -1 == disable */
+    uint32_t pid;
+    int32_t index; /* -1 == disable */
 } ca_pid_t;
 
 enum ca_descr_algo
 {
-	CA_ALGO_DVBCSA,
-	CA_ALGO_DES,
-	CA_ALGO_AES128,
+    CA_ALGO_DVBCSA,
+    CA_ALGO_DES,
+    CA_ALGO_AES128,
 };
 
 enum ca_descr_cipher_mode
 {
-	CA_MODE_ECB,
-	CA_MODE_CBC,
+    CA_MODE_ECB,
+    CA_MODE_CBC,
 };
 
 // Structs "ca_descr_mode" and "ca_descr_data" and respective ioctl
@@ -259,9 +260,9 @@ enum ca_descr_cipher_mode
 
 typedef struct ca_descr_mode
 {
-	uint32_t index;
-	enum ca_descr_algo algo;
-	enum ca_descr_cipher_mode cipher_mode;
+    uint32_t index;
+    enum ca_descr_algo algo;
+    enum ca_descr_cipher_mode cipher_mode;
 } ca_descr_mode_t;
 
 /*
@@ -278,23 +279,23 @@ typedef struct ca_descr_mode
 
 enum ca_descr_data_type
 {
-	CA_DATA_IV,
-	CA_DATA_KEY,
+    CA_DATA_IV,
+    CA_DATA_KEY,
 };
 
 enum ca_descr_parity
 {
-	CA_PARITY_EVEN,
-	CA_PARITY_ODD,
+    CA_PARITY_EVEN,
+    CA_PARITY_ODD,
 };
 
 typedef struct ca_descr_data
 {
-	uint32_t index;
-	enum ca_descr_parity parity;
-	enum ca_descr_data_type data_type;
-	uint32_t length;
-	uint8_t *data;
+    uint32_t index;
+    enum ca_descr_parity parity;
+    enum ca_descr_data_type data_type;
+    uint32_t length;
+    uint8_t *data;
 } ca_descr_data_t;
 
 #define CA_GET_DESCR_INFO _IOR('o', 131, ca_descr_info_t)
@@ -304,7 +305,7 @@ typedef struct ca_descr_data
 #define CA_SET_DESCR_DATA _IOW('o', 137, ca_descr_data_t)
 
 //-----------------------------------------------------------------------------
-// OSCam defined structures
+// NCam defined structures
 //-----------------------------------------------------------------------------
 
 struct box_devices
@@ -332,19 +333,22 @@ typedef struct filter_s
 	uint8_t          prevecmd5[CS_ECMSTORESIZE];         // previous requested ecm md5
 	int32_t          prevresult;
 #if defined(WITH_STAPI) || defined(WITH_STAPI5)
-	int32_t          NumSlots;
+        int32_t          NumSlots;
 	uint32_t         SlotHandle[10];
 	uint32_t         BufferHandle[10];
+#endif
+#ifdef WITH_EMU
+	uint32_t cadata;
 #endif
 } FILTERTYPE;
 
 #ifdef WITH_EXTENDED_CW
-#define MAX_STREAM_INDICES  32 // In practice, 5 is the maximum ever used
+#define MAX_STREAM_INDICES   32 // In practice, 5 is the maximum ever used
 #else
 #define MAX_STREAM_INDICES   1
 #endif
 
-#define CA_MAX              32 // Max ca devices supported by oscam - limited by sizeof(ca_mask) of struct demux_s (32 bits)
+#define CA_MAX              32 // Max ca devices supported by ncam - limited by sizeof(ca_mask) of struct demux_s (32 bits)
 #define INDEX_MAX           64 // Max descramblers per ca device - limited by sizeof(activeindexers) of struct s_streampid (64 bits)
 #define INDEX_MAX_LOCAL     16 // Max total descramblers to use for enigma2 and other STBs when dvbapi_get_descrambler_info() fails
 #define INDEX_MAX_NET       64 // Max total descramblers to use for PC (VDR, Tvheadend, etc)
@@ -368,6 +372,9 @@ typedef struct s_ecmpid
 	uint32_t         index[MAX_STREAM_INDICES];          // ca indices used for this ecm pid (index[0] holds ca index for STREAMmpids[0] and so on)
 	uint32_t         streams;                            // bit mask of STREAMpids enabled for this ECMpid
 	uint32_t         cadata;
+#ifdef WITH_EMU
+	int16_t pvu_counter;
+#endif
 } ECMPIDTYPE;
 
 typedef struct s_emmpid
@@ -387,11 +394,19 @@ enum stream_type
 	STREAM_SUBTITLE
 };
 
-#define MAX_DEMUX       32 // Max number of demuxes supported by OSCam - each channel/service occupies one demux
+#ifdef WITH_GXAPI
+#define MAX_DEMUX       16
+#else
+#define MAX_DEMUX       32 // Max number of demuxes supported by NCam - each channel/service occupies one demux
+#endif
 #define MAX_ECM_PIDS    24 // Max number of ECM pids per demux
 #define MAX_EMM_PIDS    24 // Max number of EMM pids per demux
 #define MAX_STREAM_PIDS 32 // Max number of pids other than ECM and EMM (e.g. audio, video, subtitle, etc) per demux (hardware descramblers might have a capacity of 30 pids)
+#ifdef WITH_GXAPI
+#define MAX_FILTER      48
+#else
 #define MAX_FILTER      64
+#endif
 #define MAX_ASSOC_FD    MAX_DEMUX
 
 #define PTINUM          10
@@ -405,24 +420,24 @@ typedef struct demux_s
 	int32_t          socket_fd;                          // Connection identifier through which we received the CA PMT object
 	uint16_t         client_proto_version;
 	FILTERTYPE       demux_fd[MAX_FILTER];
-	int8_t           ECMpidcount;                        // Count of ECM pids in this program
+	int8_t           ECMpidcount;                     // Count of ECM pids in this program
 	ECMPIDTYPE       ECMpids[MAX_ECM_PIDS];
-	int8_t           EMMpidcount;                        // Count of EMM pids in this program
+	int8_t           EMMpidcount;                     // Count of EMM pids in this program
 	EMMPIDTYPE       EMMpids[MAX_EMM_PIDS];
-	struct timeb     emmstart;                           // last time emm cat was started
+	struct timeb     emmstart;                        // last time emm cat was started
 	uint16_t         max_emm_filter;
 	int8_t           STREAMpidcount;
 	uint16_t         STREAMpids[MAX_STREAM_PIDS];
-	enum stream_type STREAMpidsType[MAX_STREAM_PIDS];    // type (audio, video, subtitle, etc) of the corresponding stream pid
-	int16_t          pidindex;                           // ECMpid used for descrambling - holds index of the ECMpids[] array
+	enum stream_type STREAMpidsType[MAX_STREAM_PIDS]; // type (audio, video, subtitle, etc) of the corresponding stream pid
+	int16_t          pidindex;                        // ECMpid used for descrambling - holds index of the ECMpids[] array
 	int16_t          curindex;
 	int8_t           max_status;
 	uint16_t         program_number;                     // also called service id (srvid)
-	uint16_t         onid;                               // original network id
-	uint16_t         tsid;                               // transport stream id
-	uint16_t         pmtpid;                             // PMT pid for the program_number
-	uint32_t         ens;                                // enigma namespace
-	uint8_t          last_cw[MAX_STREAM_INDICES][2][16]; // even/odd pairs of 16 byte CWs used for descrambling on the last crypto period
+ 	uint16_t         onid;                               // original network id
+ 	uint16_t         tsid;                               // transport stream id
+ 	uint16_t         pmtpid;                             // PMT pid for the program_number
+ 	uint32_t         ens;                                // enigma namespace
+ 	uint8_t          last_cw[MAX_STREAM_INDICES][2][16]; // even/odd pairs of 16 byte CWs used for descrambling on the last crypto period
 	int8_t           emm_filter;
 	int8_t           sdt_filter;
 	uint8_t          hexserial[8];
@@ -434,6 +449,7 @@ typedef struct demux_s
 	uint8_t          old_ecmfiltercount;                 // previous ecm filter count
 	uint8_t          old_emmfiltercount;                 // previous emm filter count
 	pthread_mutex_t  answerlock;                         // request mode 1 avoid race
+	int8_t init_mutex;
 #ifdef WITH_STAPI
 	uint32_t         DescramblerHandle[PTINUM];
 	int32_t          desc_pidcount;
@@ -442,19 +458,19 @@ typedef struct demux_s
 #ifdef WITH_STAPI5
 	uint32_t         dev_index;
 #endif
-	int8_t           decodingtries;                      // -1 = first run
+	int8_t           decodingtries;                  // -1 = first run
 	struct timeb     decstart;
 	struct timeb     decend;
 } DEMUXTYPE;
 
 typedef struct s_streampid
 {
-	uint16_t         streampid;                          // pid of this stream
-	uint8_t          cadevice;                           // CA device used for descramlbing
-	uint32_t         caindex;                            // index (slot) of the CA device used
-	uint64_t         activeindexers;                     // bitmask indexers if streampid enabled for index, bit is set
-	bool             use_des;                            // whether to use DES for descrambling this streampid
-} STREAMPIDTYPE;
+	uint16_t         streampid;                      // pid of this stream
+	uint8_t          cadevice;                       // CA device used for descramlbing
+	uint32_t         caindex;                        // index (slot) of the CA device used
+	uint64_t         activeindexers;                 // bitmask indexers if streampid enabled for index, bit is set
+	bool             use_des;                        // whether to use DES for descrambling this streampid
+}STREAMPIDTYPE;
 
 struct s_dvbapi_priority
 {
@@ -476,6 +492,7 @@ struct s_dvbapi_priority
 	char             pmtfile[30];
 	int8_t           disablefilter;
 #endif
+//	struct s_dvbapi_priority *last;
 	struct s_dvbapi_priority *next;
 };
 
@@ -490,6 +507,8 @@ int32_t dvbapi_open_device(int32_t, int32_t, int);
 int32_t dvbapi_stop_filternum(int32_t demux_id, int32_t num, uint32_t msgid);
 int32_t dvbapi_stop_filter(int32_t demux_id, int32_t type, uint32_t msgid);
 struct s_dvbapi_priority *dvbapi_check_prio_match(int32_t demux_id, int32_t pidindex, char type);
+//void dvbapi_adjust_prioritytab(int demux_index);
+//void dvbapi_write_prio(void);
 void dvbapi_send_dcw(struct s_client *client, ECM_REQUEST *er);
 void dvbapi_write_cw(int32_t demux_id, int32_t pid, int32_t stream_id, uint8_t *cw, uint8_t cw_length, uint8_t *iv, uint8_t iv_length, enum ca_descr_algo algo, enum ca_descr_cipher_mode cipher_mode, uint32_t msgid);
 int32_t dvbapi_parse_capmt(const uint8_t *buffer, uint32_t length, int32_t connfd, char *pmtfile, uint16_t client_proto_version, uint32_t msgid);
@@ -513,7 +532,7 @@ void rotate_emmfilter(int32_t demux_id);
 int32_t filtermatch(uint8_t *buffer, int32_t filter_num, int32_t demux_id, int32_t len);
 void delayer(ECM_REQUEST *er, uint32_t delay);
 void check_add_emmpid(int32_t demux_id, uint8_t *filter, int32_t l, int32_t emmtype);
-void *dvbapi_start_handler(struct s_client *cl, uint8_t *mbuf, int32_t module_idx, void *(*_main_func)(void *));
+void *dvbapi_start_handler(struct s_client *cl, uint8_t *mbuf, int32_t module_idx, void * (*_main_func)(void *));
 uint32_t dvbapi_get_desc_index(int32_t demux_id, int32_t pid, int32_t stream_id);
 void dvbapi_write_ecminfo_file(struct s_client *client, ECM_REQUEST *er, uint8_t *lastcw0, uint8_t *lastcw1, uint8_t cw_length);
 

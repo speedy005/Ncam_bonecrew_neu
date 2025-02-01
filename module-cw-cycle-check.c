@@ -4,12 +4,12 @@
 #ifdef CW_CYCLE_CHECK
 
 #include "module-cw-cycle-check.h"
-#include "oscam-chk.h"
-#include "oscam-client.h"
-#include "oscam-ecm.h"
-#include "oscam-lock.h"
-#include "oscam-string.h"
-#include "oscam-cache.h"
+#include "ncam-chk.h"
+#include "ncam-client.h"
+#include "ncam-ecm.h"
+#include "ncam-lock.h"
+#include "ncam-string.h"
+#include "ncam-cache.h"
 
 struct s_cwc_md5
 {
@@ -111,7 +111,6 @@ static uint8_t countCWpart(ECM_REQUEST *er, struct s_cw_cycle_check *cwc)
 		}
 	}
 
-
 	if(ret > cfg.cwcycle_sensitive)
 	{
 		cs_log("cyclecheck [countCWpart] new cw is to like old one (unused part), sensitive %d, same bytes %d", cfg.cwcycle_sensitive, ret);
@@ -123,7 +122,9 @@ static uint8_t checkvalidCW(ECM_REQUEST *er)
 {
 	uint8_t ret = 1;
 
-	if(chk_is_null_CW(er->cw))
+	// Skip check for BISS1 - cw could be indeed zero
+	// Skip check for BISS2 - we use the extended cw, so the "simple" cw is always zero
+	if(chk_is_null_CW(er->cw) && !caid_is_biss(er->caid))
 	{ er->rc = E_NOTFOUND; }
 
 	if(er->rc == E_NOTFOUND)
@@ -239,6 +240,7 @@ static int32_t checkcwcycle_int(ECM_REQUEST *er, char *er_ecmf , char *user, uin
 			cs_hexdump(0, cw, 16, cwstr, sizeof(cwstr)); //checked cw for log
 		}
 #endif
+
 		if(cs_malloc(&cwc, sizeof(struct s_cw_cycle_check)))
 		{
 			memcpy(cwc, currentnode, sizeof(struct s_cw_cycle_check)); //copy current to new

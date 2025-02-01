@@ -4,27 +4,28 @@
 
 #include "module-gbox.h"
 #include "module-led.h"
-#include "oscam-chk.h"
-#include "oscam-client.h"
-#include "oscam-ecm.h"
-#include "oscam-emm.h"
-#include "oscam-net.h"
-#include "oscam-time.h"
-#include "oscam-work.h"
-#include "oscam-reader.h"
+#include "ncam-chk.h"
+#include "ncam-client.h"
+#include "ncam-ecm.h"
+#include "ncam-emm.h"
+#include "ncam-net.h"
+#include "ncam-time.h"
+#include "ncam-work.h"
+#include "ncam-reader.h"
 #include "reader-common.h"
 //#include "csctapi/atr.h"
 #include "csctapi/icc_async.h"
+#include "readers.h" // required by the EMU reader
 
 extern const struct s_cardsystem *cardsystems[];
 extern char *RDR_CD_TXT[];
 
-int32_t check_sct_len(const uint8_t *data, int32_t off)
+int32_t check_sct_len(const uint8_t *data, int32_t off, int32_t maxSize)
 {
 	int32_t len = SCT_LEN(data);
-	if(len + off > MAX_LEN)
+	if(len + off > maxSize)
 	{
-		cs_log_dbg(D_TRACE | D_READER, "check_sct_len(): smartcard section too long %d > %d", len, MAX_LEN - off);
+		cs_log_dbg(D_TRACE | D_READER, "check_sct_len(): smartcard section too long %d > %d", len, maxSize - off);
 		len = -1;
 	}
 	return len;
@@ -36,14 +37,11 @@ static void reader_nullcard(struct s_reader *reader)
 	reader->csystem = NULL;
 	memset(reader->hexserial, 0, sizeof(reader->hexserial));
 	memset(reader->prid, 0xFF, sizeof(reader->prid));
-	memset(reader->sa, 0, sizeof(reader->sa));
-	memset(reader->emm82u, 0, sizeof(reader->emm82u));
-	memset(reader->emm84, 0, sizeof(reader->emm84));
-	memset(reader->emm84s, 0, sizeof(reader->emm84s));
-	memset(reader->emm83s, 0, sizeof(reader->emm83s));
-	memset(reader->emm83u, 0, sizeof(reader->emm83u));
-	memset(reader->emm87, 0, sizeof(reader->emm87));
+#ifdef WITH_CARDLIST
+	if(reader->card_status != CARD_NEED_INIT) { reader->caid = 0; }
+#else
 	reader->caid = 0;
+#endif
 	reader->nprov = 0;
 	cs_clear_entitlement(reader);
 }
@@ -72,6 +70,9 @@ int32_t card_write(struct s_reader *reader, const uint8_t *cmd, const uint8_t *d
 		{
 			datalen = cmd[4];
 		}
+		if(reader->card_atr_length >= 13 && !memcmp(reader->card_atr + 5, "DVN TECH", 8))
+			{ datalen += 2; }
+
 		memcpy(buf + CMD_LEN, data, datalen);
 		return (reader_cmd2icc(reader, buf, CMD_LEN + datalen, response, response_length));
 	}
@@ -150,6 +151,18 @@ static int32_t reader_get_cardsystem(struct s_reader *reader, ATR *atr)
 {
 	int32_t i;
 
+#ifdef WITH_EMU
+	if(reader->typ == R_EMU)
+	{
+		NULLFREE(reader->csystem_data);
+		rdr_log(reader, "found card system %s", reader_emu.desc);
+		reader->csystem = &reader_emu;
+		reader->csystem_active = true;
+		led_status_found_cardsystem();
+		return (reader->csystem_active);
+	}
+#endif
+
 	for(i = 0; cardsystems[i]; i++)
 	{
 		NULLFREE(reader->csystem_data);
@@ -187,7 +200,6 @@ void cardreader_do_reset(struct s_reader *reader)
 	int32_t ret = 0;
 	int16_t i = 0;
 	int16_t j = 0;
-
 	if (reader->typ == R_SMART && reader->smartdev_found >= 4) j = 1; else j = 1; // back to a single start
 
 	for (i= 0; i < j; i++)
@@ -330,6 +342,25 @@ void cardreader_init_locks(void)
 	ICC_Async_Init_Locks();
 }
 
+static bool is_dm(const char *boxtype)
+{
+	const char *devices[] =
+	{
+		"dm500hd", "dm500hdv2", "dm520", "dm525",
+		"dm7020hd", "dm7080",
+		"dm800", "dm8000", "dm800se", "dm800sev2", "dm820",
+		"dm900", "dm920",
+		"one", "two"
+	};
+
+	uint8_t i;
+	for(i = 0; i < 15; i++)
+	{
+		if(!strcasecmp(devices[i], boxtype)) { return true; }
+	}
+	return false;
+}
+
 bool cardreader_init(struct s_reader *reader)
 {
 	struct s_client *client = reader->client;
@@ -354,39 +385,16 @@ bool cardreader_init(struct s_reader *reader)
 	}
 	else
 	{
-		if(reader->typ == R_INTERNAL)
+		if(reader->typ == R_INTERNAL && reader->autospeed == 1)
 		{
 			if(boxtype_is("dm500") || boxtype_is("dm600pvr"))
-				{reader->cardmhz = 3150;}
-
-			if(boxtype_is("dm7025"))
-				{reader->cardmhz = 8300;}
-
-			if((!strncmp(boxtype_get(), "vu", 2 ))||(boxtype_is("ini-8000am")))
-				{reader->cardmhz = 2700; reader->mhz = 450;} // only one speed for VU+ and Atemio Nemesis due to usage of TDA8024
-		}
-
-		if(
-		reader->typ == R_INTERNAL && (
-		(strncmp(boxtype_get(), "dm500hdv2", 9) == 0) ||
-		(strncmp(boxtype_get(), "dm800sev2", 9) == 0) ||
-		(strncmp(boxtype_get(), "dm7020hd",  8) == 0) ||
-		(strncmp(boxtype_get(), "dm500hd",   7) == 0) ||
-		(strncmp(boxtype_get(), "dm800se",   7) == 0) ||
-		(strncmp(boxtype_get(), "dm7080",    6) == 0) ||
-		(strncmp(boxtype_get(), "dm8000",    6) == 0) ||
-		(strncmp(boxtype_get(), "dm520",     5) == 0) ||
-		(strncmp(boxtype_get(), "dm525",     5) == 0) ||
-		(strncmp(boxtype_get(), "dm800",     5) == 0) ||
-		(strncmp(boxtype_get(), "dm820",     5) == 0) ||
-		(strncmp(boxtype_get(), "dm900",     5) == 0) ||
-		(strncmp(boxtype_get(), "dm920",     5) == 0) ||
-		(strncmp(boxtype_get(), "one",       3) == 0) ||
-		(strncmp(boxtype_get(), "two",       3) == 0)) )
-		{
-			rdr_log(reader, "Dreambox %s found! set Internal Card-MHz = 2700", boxtype_get() );
-			reader->cardmhz = 2700;
-			return true;
+				{ reader->cardmhz = 3150; }
+			else if(boxtype_is("dm7025"))
+				{ reader->cardmhz = 8300; }
+			else if(is_dm(boxtype_get())) // Enigma2 DreamBox devices
+				{ reader->cardmhz = 2700; }
+			else if((strncmp(boxtype_get(), "vu", 2) == 0) || (boxtype_is("ini-8000am")))
+				{ reader->cardmhz = 2700; reader->mhz = 450; } // only one speed for VU+ and Atemio Nemesis due to usage of TDA8024
 		}
 
 		if((reader->cardmhz > 2000) && (reader->typ != R_SMART))
@@ -439,7 +447,7 @@ bool cardreader_init(struct s_reader *reader)
 
 			if ((reader->typ == R_SMART || is_smargo_reader(reader)) && reader->autospeed == 1)
 			{
-				rdr_log(reader, "Reader initialized (device=%s, detect=%s%s, mhz= AUTO, cardmhz=%d)",
+				rdr_log(reader, "Reader initialized (device=%s, detect=%s%s, mhz=AUTO, cardmhz=%d)",
 						reader->device,
 						reader->detect & 0x80 ? "!" : "",
 						RDR_CD_TXT[reader->detect & 0x7f],
@@ -533,6 +541,7 @@ int32_t cardreader_do_emm(struct s_reader *reader, EMM_PACKET *ep)
 	return (rc);
 }
 
+#if defined(WITH_SENDCMD) && defined(READER_VIDEOGUARD)
 int32_t cardreader_do_rawcmd(struct s_reader *reader, CMD_PACKET *cp)
 {
 	int32_t rc;
@@ -543,6 +552,7 @@ int32_t cardreader_do_rawcmd(struct s_reader *reader, CMD_PACKET *cp)
 	}
 	return (rc);
 }
+#endif
 
 void cardreader_process_ecm(struct s_reader *reader, struct s_client *cl, ECM_REQUEST *er)
 {

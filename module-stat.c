@@ -6,16 +6,16 @@
 #include "cscrypt/md5.h"
 #include "module-cacheex.h"
 #include "module-cccam.h"
-#include "oscam-array.h"
-#include "oscam-cache.h"
-#include "oscam-conf-chk.h"
-#include "oscam-chk.h"
-#include "oscam-client.h"
-#include "oscam-ecm.h"
-#include "oscam-files.h"
-#include "oscam-lock.h"
-#include "oscam-string.h"
-#include "oscam-time.h"
+#include "ncam-array.h"
+#include "ncam-cache.h"
+#include "ncam-conf-chk.h"
+#include "ncam-chk.h"
+#include "ncam-client.h"
+#include "ncam-ecm.h"
+#include "ncam-files.h"
+#include "ncam-lock.h"
+#include "ncam-string.h"
+#include "ncam-time.h"
 
 #define UNDEF_AVG_TIME 99999 // NOT set here 0 or small value! Could cause there reader get selected
 #define MAX_ECM_SEND_CACHE 16
@@ -302,7 +302,7 @@ static void calc_stat(READER_STAT *s)
 }
 
 /**
- * Saves statistik to /tmp/.oscam/stat.n where n is reader-index
+ * Saves statistik to /tmp/.ncam/stat.n where n is reader-index
  */
 static void save_stat_to_file_thread(void)
 {
@@ -897,7 +897,7 @@ void check_lb_auto_betatunnel_mode(ECM_REQUEST *er)
 
 uint16_t get_rdr_caid(struct s_reader *rdr)
 {
-	if(is_network_reader(rdr))
+	if(is_network_reader(rdr) || rdr->typ == R_EMU)
 	{
 		return 0; // reader caid is not real caid
 	}
@@ -1288,7 +1288,7 @@ void stat_get_best_reader(ECM_REQUEST *er)
 		for(ea = er->matching_rdr; ea; ea = ea->next)
 		{
 			rdr = ea->reader;
-			if(is_network_reader(rdr)) // reader caid is not real caid
+			if(is_network_reader(rdr) || rdr->typ == R_EMU) // reader caid is not real caid
 			{
 				prv = ea;
 				continue; // proxy can convert or reject
@@ -1363,11 +1363,14 @@ void stat_get_best_reader(ECM_REQUEST *er)
 		if(nr > 5)
 			{ snprintf(rptr, l, "...(%d more)", nr - 5); }
 
-		char ecmbuf[ECM_FMT_LEN];
-		format_ecm(er, ecmbuf, ECM_FMT_LEN);
+		if(cs_dblevel & D_LB)
+		{
+			char ecmbuf[ECM_FMT_LEN];
+			format_ecm(er, ecmbuf, ECM_FMT_LEN);
 
-		cs_log_dbg(D_LB, "loadbalancer: client %s for %s: n=%d valid readers: %s",
-					username(er->client), ecmbuf, nr, buf);
+			cs_log_dbg(D_LB, "loadbalancer: client %s for %s: n=%d selected readers: %s",
+						username(er->client), ecmbuf, nr, buf);
+		}
 	}
 #endif
 
@@ -1737,14 +1740,11 @@ void stat_get_best_reader(ECM_REQUEST *er)
 		if(nr > 5)
 			{ snprintf(rptr, l, "...(%d more)", nr - 5); }
 
-		if(cs_dblevel & D_LB)
-		{
-			char ecmbuf[ECM_FMT_LEN];
-			format_ecm(er, ecmbuf, ECM_FMT_LEN);
+		char ecmbuf[ECM_FMT_LEN];
+		format_ecm(er, ecmbuf, ECM_FMT_LEN);
 
-			cs_log_dbg(D_LB, "loadbalancer: client %s for %s: n=%d selected readers: %s",
-						username(er->client), ecmbuf, nr, buf);
-		}
+		cs_log_dbg(D_LB, "loadbalancer: client %s for %s: n=%d selected readers: %s",
+					username(er->client), ecmbuf, nr, buf);
 	}
 #endif
 	return;

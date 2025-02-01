@@ -6,10 +6,10 @@
 
 #include "module-dvbapi.h"
 #include "module-dvbapi-stapi.h"
-#include "oscam-client.h"
-#include "oscam-files.h"
-#include "oscam-string.h"
-#include "oscam-time.h"
+#include "ncam-client.h"
+#include "ncam-files.h"
+#include "ncam-string.h"
+#include "ncam-time.h"
 
 extern int32_t exit_oscam;
 
@@ -136,15 +136,12 @@ static void stapi_off(void)
 int32_t stapi_open(void)
 {
 	uint32_t ErrorCode;
-	struct dirent **entries;
-	struct stat buf;
-	int32_t i = 0, n;
-	char pfad[512];
+	struct dirent **entries = NULL;
+	int i = 0, n;
+
 	stapi_on = 1;
 	int32_t stapi_priority = 0;
-
 	memset(dev_list, 0, sizeof(struct STDEVICE)*PTINUM);
-	memset(pfad, 0, sizeof(pfad));
 
 	if(dvbapi_priority)
 	{
@@ -176,14 +173,17 @@ int32_t stapi_open(void)
 	}
 	while(n--)
 	{
-		snprintf(pfad, sizeof(pfad), "%s%s", PROCDIR, entries[n]->d_name);
-		if(stat(pfad, &buf) != 0)
+		char pfad[cs_strlen(PROCDIR) + cs_strlen(entries[i]->d_name) + 1];
+		snprintf(pfad, sizeof(pfad), "%s%s", PROCDIR, entries[i]->d_name);
+
+		struct stat buf;
+		if (stat(pfad, &buf) != 0)
 		{
 			free(entries[n]);
 			continue;
 		}
 
-		if(!(buf.st_mode & S_IFDIR && strncmp(entries[n]->d_name, ".", 1) != 0))
+		if (!(buf.st_mode & S_IFDIR && strncmp(entries[i]->d_name, ".", 1) != 0))
 		{
 			free(entries[n]);
 			continue;
@@ -191,7 +191,6 @@ int32_t stapi_open(void)
 
 		int32_t do_open = 0;
 		struct s_dvbapi_priority *p;
-
 		for(p = dvbapi_priority; p != NULL; p = p->next)
 		{
 			if(p->type != 's') { continue; }
@@ -332,7 +331,7 @@ int32_t stapi_set_filter(int32_t demux_id, uint16_t pid, uint8_t *filter, uint8_
 
 	if(p == NULL)
 	{
-		cs_log_dbg(D_DVBAPI, "No matching S: line in oscam.dvbapi for pmtfile %s -> stop descrambling!", pmtfile);
+		cs_log_dbg(D_DVBAPI, "No matching S: line in ncam.dvbapi for pmtfile %s -> stop descrambling!", pmtfile);
 		snprintf(dest, sizeof(dest), "%s%s", TMPDIR, demux[demux_id].pmt_file);
 		unlink(dest); // remove obsolete pmt file
 		dvbapi_stop_descrambling(demux_id, 0);
@@ -731,8 +730,10 @@ int32_t stapi_write_cw(int32_t demux_id, uint8_t *cw, uint16_t *STREAMpids, int3
 
 	for(l = 0; l < 2; l++)
 	{
+		// Skip check for BISS1 - cw could be indeed zero
+		// Skip check for BISS2 - we use the extended cw, so the "simple" cw is always zero
 		if(memcmp(cw + (l * 8), demux[demux_id].last_cw[0][l], 8) != 0
-			&& (memcmp(cw + (l * 8), nullcw, 8) != 0))
+			&& (memcmp(cw + (l * 8), nullcw, 8) != 0 || caid_is_biss(demux[demux_id].ECMpids[pidnum].CAID)))
 		{
 			ErrorCode = oscam_sttkd_KeyWrite(tkd_desc_info[demux[demux_id].dev_index].key_hndl, l, cw + (l * 8));
 

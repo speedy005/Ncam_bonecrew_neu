@@ -9,12 +9,12 @@
 
 #include "module-dvbapi.h"
 #include "module-dvbapi-coolapi.h"
-#include "oscam-string.h"
+#include "ncam-string.h"
 
 
 #define MAX_COOL_DMX 4
 
-//kronos-Plattform (Coolsterem ZEE)
+//kronos-Plattform (Coolsterem ZEE²)
 //#define MAX_COOL_DMX 3
 
 
@@ -40,7 +40,7 @@ typedef struct s_cool_chanhandle
 	void        *buffer1; // filter Cbuf 1
 	void        *buffer2; // filter Cbuf 2
 	void        *channel;
- 	int32_t     demux_index;
+	int32_t     demux_index;
 	struct s_cool_dmxhandle *dmx_handle;
 	uint32_t    allocated_filters;
 } S_COOL_CHANHANDLE;
@@ -687,7 +687,7 @@ int32_t coolapi_remove_filter(int32_t fd, int32_t num)
 	if (filter) {
 		result = cnxt_dmx_close_filter(filter);
 		coolapi_check_error("cnxt_dmx_close_filter", result);
- 	}
+	}
 
 	// COOLAPI2 - We don't want to close Channel on no ECM Filters (Makes AU / EMMs work)
 	if(dmx->type != TYPE_ECM)

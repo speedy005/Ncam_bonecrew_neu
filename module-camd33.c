@@ -2,12 +2,12 @@
 
 #include "globals.h"
 #ifdef MODULE_CAMD33
-#include "oscam-aes.h"
-#include "oscam-client.h"
-#include "oscam-ecm.h"
-#include "oscam-emm.h"
-#include "oscam-net.h"
-#include "oscam-string.h"
+#include "ncam-aes.h"
+#include "ncam-client.h"
+#include "ncam-ecm.h"
+#include "ncam-emm.h"
+#include "ncam-net.h"
+#include "ncam-string.h"
 
 #define REQ_SIZE 4
 

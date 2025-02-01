@@ -4,16 +4,16 @@
 #ifdef MODULE_MONITOR
 #include "cscrypt/md5.h"
 #include "module-monitor.h"
-#include "oscam-aes.h"
-#include "oscam-array.h"
-#include "oscam-client.h"
-#include "oscam-config.h"
-#include "oscam-conf-chk.h"
-#include "oscam-lock.h"
-#include "oscam-net.h"
-#include "oscam-reader.h"
-#include "oscam-string.h"
-#include "oscam-work.h"
+#include "ncam-aes.h"
+#include "ncam-array.h"
+#include "ncam-client.h"
+#include "ncam-config.h"
+#include "ncam-conf-chk.h"
+#include "ncam-lock.h"
+#include "ncam-net.h"
+#include "ncam-reader.h"
+#include "ncam-string.h"
+#include "ncam-work.h"
 
 extern char *entitlement_type[];
 
@@ -356,7 +356,7 @@ static void monitor_process_info(void)
 
 static void monitor_send_details(char *txt, uint32_t tid)
 {
-	char buf[512];
+	char buf[256];
 	snprintf(buf, sizeof(buf), "[D-----]%8X|%s\n", tid, txt);
 	monitor_send_info(buf, 0);
 }
@@ -364,7 +364,7 @@ static void monitor_send_details(char *txt, uint32_t tid)
 static void monitor_send_details_version(void)
 {
 	char buf[256];
-	snprintf(buf, sizeof(buf), "[V-0000]version=%s, system=%s\n", CS_VERSION, CS_TARGET);
+	snprintf(buf, sizeof(buf), "[V-0000]version=%s, build=%s, system=%s\n", CS_VERSION, CS_REVISION, CS_TARGET);
 	monitor_send_info(buf, 1);
 }
 
@@ -377,7 +377,7 @@ static void monitor_send_keepalive_ack(void)
 
 static void monitor_process_details_master(char *buf, uint32_t pid)
 {
-	snprintf(buf, 256, "Version=%s", CS_VERSION);
+	snprintf(buf, 256, "Version=%s %s", CS_VERSION, CS_REVISION);
 	monitor_send_details(buf, pid);
 	snprintf(buf, 256, "System=%s", CS_TARGET);
 	monitor_send_details(buf, pid);
@@ -388,13 +388,9 @@ static void monitor_process_details_master(char *buf, uint32_t pid)
 	snprintf(buf, 256, "ClientMaxIdle=%d sec", cfg.cmaxidle);
 	monitor_send_details(buf, pid);
 	if(cfg.max_log_size)
-	{
-		snprintf(buf, 256, "MaxLogsize=%d Kb", cfg.max_log_size);
-	}
+		{ snprintf(buf, 256, "MaxLogsize=%d Kb", cfg.max_log_size); }
 	else
-	{
-		snprintf(buf, 256, "MaxLogsize=unlimited");
-	}
+		{ cs_strncpy(buf, "MaxLogsize=unlimited", 256); }
 	monitor_send_details(buf, pid);
 	snprintf(buf, 256, "ClientTimeout=%u ms", cfg.ctimeout);
 	monitor_send_details(buf, pid);
@@ -521,9 +517,9 @@ static void monitor_process_details_reader(struct s_client *cl)
 
 static void monitor_process_details(char *arg)
 {
-	uint32_t tid = 0; //using threadid 8 positions hex see oscam-log.c //FIXME untested but pid isnt working anyway with threading
+	uint32_t tid = 0; //using threadid 8 positions hex see ncam-log.c //FIXME untested but pid isnt working anyway with threading
 	struct s_client *cl = NULL, *cl1;
-	char sbuf[256];
+	char sbuf[256] = {0};
 
 	if(!arg)
 		{ cl = first_client; } // no arg - show master
@@ -831,7 +827,7 @@ static void monitor_set_server(char *args)
 #ifdef WEBIF
 static void monitor_restart_server(void)
 {
-	cs_restart_oscam();
+	cs_restart_ncam();
 }
 #endif
 
@@ -910,7 +906,7 @@ static int32_t monitor_process_request(char *req)
 					break; // status
 
 				case 4:
-					if(cur_cl->monlvl > 3) { cs_exit_oscam(); }
+					if(cur_cl->monlvl > 3) { cs_exit_ncam(); }
 					break; // shutdown
 
 				case 5:

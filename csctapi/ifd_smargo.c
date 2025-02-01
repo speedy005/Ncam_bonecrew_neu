@@ -1,7 +1,7 @@
 #include "../globals.h"
 
 #ifdef CARDREADER_SMARGO
-#include "../oscam-time.h"
+#include "../ncam-time.h"
 #include "icc_async.h"
 #include "io_serial.h"
 

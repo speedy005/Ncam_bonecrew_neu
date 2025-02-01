@@ -8,21 +8,19 @@
 #include "cscrypt/md5.h"
 #include "module-newcamd.h"
 #include "module-newcamd-des.h"
-#include "oscam-array.h"
-#include "oscam-conf-chk.h"
-#include "oscam-chk.h"
-#include "oscam-client.h"
-#include "oscam-ecm.h"
-#include "oscam-emm.h"
-#include "oscam-net.h"
-#include "oscam-reader.h"
-#include "oscam-string.h"
-#include "oscam-time.h"
+#include "ncam-array.h"
+#include "ncam-conf-chk.h"
+#include "ncam-chk.h"
+#include "ncam-client.h"
+#include "ncam-ecm.h"
+#include "ncam-emm.h"
+#include "ncam-net.h"
+#include "ncam-reader.h"
+#include "ncam-string.h"
+#include "ncam-time.h"
 
 const int32_t CWS_NETMSGSIZE = 1024; // csp 0.8.9 (default: 400). This is CWS_NETMSGSIZE. The old default was 240
-int32_t portion_sid_num = 0;
 
-#define NCD_CLIENT_ID 0x8888
 #define CWS_FIRSTCMDNO 0xE0
 
 typedef enum
@@ -73,6 +71,32 @@ typedef struct custom_data
 
 #define REQ_SIZE 2
 
+static int32_t ndc_id(struct s_client *cl)
+{
+	uint16_t ret;
+	switch(cl->reader->ncd_stealth)
+	{
+	case 1:
+		ret = 0x6D67;  // mgcamd
+		break;
+	case 2:
+		ret = 0x6D63; // "mpcs"
+		break;
+	case 3:
+		ret = 0x6576; // evocamd
+		break;
+	case 4:
+		ret = 0x0000; // generic
+		break;
+	case 5:
+		ret = 0x8888; // OSCam
+		break;
+	default:
+		ret = 0x8181; // NCam
+	}
+	return ret;
+}
+
 static int32_t network_message_send(int32_t handle, uint16_t *netMsgId, uint8_t *buffer, int32_t len,
 									uint8_t *deskey, comm_type_t commType, uint16_t sid, custom_data_t *cd)
 {
@@ -114,7 +138,7 @@ static int32_t network_message_send(int32_t handle, uint16_t *netMsgId, uint8_t 
 	if(sid)
 	{
 		if(cl->reader && cl->reader->ncd_disable_server_filt
-			&& sid != NCD_CLIENT_ID && cl->ncd_proto != NCD_524) // mgclient send header
+			&& sid != ndc_id(cl) && cl->ncd_proto != NCD_524) // mgclient send header
 		{
 			memcpy(netbuf + 4, cl->ncd_header + 4, 7);
 		}
@@ -185,7 +209,7 @@ static int32_t send_sid_list(void)
 	}
 
 	uint8_t mbuf[CWS_NETMSGSIZE];
-	int32_t n = 0, nr = 0, i = 0, sid_num = 0, portion_num = 0;
+	int32_t n = 0, nr = 0, portion_sid_num = 0, i = 0, sid_num = 0, portion_num = 0;
 	SIDTAB *sidtab = 0;
 	custom_data_t cd;
 
@@ -257,7 +281,6 @@ static int32_t send_sid_list(void)
 
 		network_message_send(cl->udp_fd, &cl->ncd_msgid, mbuf, portion_sid_num * 3,
 								cl->ncd_skey, COMMTYPE_SERVER, 0, &cd);
-		portion_sid_num = 0;
 	}
 
 	cs_log("%d deny SIDs in the %d messages were sent to the client.", sid_num, portion_num);
@@ -510,6 +533,21 @@ static int32_t connect_newcamd_server(void)
 		return -2;
 	}
 
+	// detect multics seed
+	uint8_t a = (keymod[0] ^ 'M') + keymod[1] + keymod[2];
+	uint8_t b = keymod[4] + (keymod[5] ^ 'C') + keymod[6];
+	uint8_t c = keymod[8] + keymod[9] + (keymod[10] ^ 'S');
+
+	if((a == keymod[3]) && (b == keymod[7]) && (c == keymod[11]))
+	{
+		cl->reader->ncd_multics_mode = 1; // detected multics seed
+		cs_log_dbg(D_READER, "multics seed detected: %s", cl->reader->r_usr);
+	}
+	else
+	{
+		cl->reader->ncd_multics_mode = 0;
+	}
+
 	cs_log_dump_dbg(D_CLIENT, keymod, sizeof(cl->reader->ncd_key), "server init sequence:");
 	nc_des_login_key_get(keymod, cl->reader->ncd_key, sizeof(cl->reader->ncd_key), key);
 
@@ -524,7 +562,7 @@ static int32_t connect_newcamd_server(void)
 	cs_strncpy((char *)buf + idx, (const char *)passwdcrypt, sizeof(buf) - idx);
 
 	network_message_send(handle, 0, buf, idx + cs_strlen((char *)passwdcrypt) + 1, key,
-						COMMTYPE_CLIENT, NCD_CLIENT_ID, NULL);
+						COMMTYPE_CLIENT, ndc_id(cl), NULL);
 
 	// 3.1 Get login answer
 	login_answer = network_cmd_no_data_receive(handle, &cl->ncd_msgid, key, COMMTYPE_CLIENT);
@@ -677,6 +715,11 @@ static int32_t newcamd_recv(struct s_client *client, uint8_t *buf, int32_t UNUSE
 	cs_log_dump_dbg(D_CLIENT, buf, rs, "received %d bytes from %s", rs, remote_txt());
 
 	client->last = time((time_t *) 0);
+
+#ifdef WITH_WI
+	if(rs == 5)
+		{ cs_sleepms(10); } // mg when init.
+#endif
 
 	if(rc == -1)
 	{
@@ -1118,6 +1161,13 @@ static int8_t newcamd_auth_client(IN_ADDR_T ip, uint8_t *deskey)
 			// set userfilter for au enabled clients
 			if(aureader)
 			{
+#ifdef WITH_EMU
+				if(aureader->typ == R_EMU)
+				{
+					usr_filter = *get_emu_prids_for_caid(aureader, cfg.ncd_ptab.ports[cl->port_idx].ncd->ncd_ftab.filts[0].caid);
+				}
+				else
+#endif
 				mk_user_au_ftab(aureader, &usr_filter);
 			}
 
@@ -1184,7 +1234,7 @@ static int8_t newcamd_auth_client(IN_ADDR_T ip, uint8_t *deskey)
 					uint32_t rprid;
 					found = 0;
 
-					if(pufilt->caid == aureader->caid)
+					if(pufilt->caid == aureader->caid && aureader->typ != R_EMU)
 					{
 						for(k = 0; k < aureader->nprov; k++)
 						{
@@ -1747,6 +1797,24 @@ static int32_t newcamd_send_ecm(struct s_client *client, ECM_REQUEST *er)
 
 static int32_t newcamd_send_emm(EMM_PACKET *ep)
 {
+#ifdef WITH_WI
+	if(!newcamd_connect())
+	{
+		return (-1);
+	}
+
+	uint8_t *buf;
+	if(!cs_malloc(&buf, ep->emmlen))
+	{
+		return (-1);
+	}
+
+	memcpy(buf, ep->emm, ep->emmlen);
+	int32_t rc = ((newcamd_send(buf, ep->emmlen, 0) < 1) ? 0 : 1);
+	NULLFREE(buf);
+
+	return rc;
+#else
 	uint8_t buf[ep->emmlen];
 
 	if(!newcamd_connect())
@@ -1757,6 +1825,7 @@ static int32_t newcamd_send_emm(EMM_PACKET *ep)
 	memcpy(buf, ep->emm, ep->emmlen);
 
 	return (newcamd_send(buf, ep->emmlen, 0) < 1) ? 0 : 1;
+#endif
 }
 
 static int32_t newcamd_recv_chk(struct s_client *client, uint8_t *dcw, int32_t *rc, uint8_t *buf, int32_t n)
@@ -1869,6 +1938,7 @@ const char *newcamd_get_client_name(uint16_t client_id)
 		{ 0x7363, "Scam" },
 		{ 0x7763, "WinCSC" },
 		{ 0x7878, "tsdecrypt" },
+		{ 0x8181, "NCam" },
 		{ 0x8888, "OSCam" },
 		{ 0x9911, "ACamd" },
 		{ 0x9922, "DVBplug" },

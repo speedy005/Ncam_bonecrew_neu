@@ -1,5 +1,5 @@
 /*
- * Bulcrypt card reader for OSCAM
+ * Bulcrypt card reader for NCAM
  * Copyright (C) 2012 Unix Solutions Ltd.
  *
  * Authors: Anton Tinchev (atl@unixsol.org)
@@ -48,7 +48,7 @@
 
 #include "globals.h"
 #ifdef READER_BULCRYPT
-#include "oscam-work.h"
+#include "ncam-work.h"
 #include "reader-common.h"
 
 static const uint8_t atr_carpet[] = { 0x3b, 0x20, 0x00 };
@@ -302,7 +302,7 @@ static int32_t bulcrypt_do_ecm(struct s_reader *reader, const ECM_REQUEST *er, s
 
 	def_resp
 
-	int32_t ecm_len = check_sct_len(er->ecm, 3);
+	int32_t ecm_len = check_sct_len(er->ecm, 3, sizeof(er->ecm));
 	if(ecm_len < 64 || ecm_len > 188)
 	{
 		rdr_log(reader, "Wrong ECM length: %d", ecm_len);
@@ -438,7 +438,7 @@ Total EMMs for the period: 3175317
 static int32_t bulcrypt_get_emm_type(EMM_PACKET *ep, struct s_reader *reader)
 {
 	char dump_emm_sn[64];
-	int32_t emm_len = check_sct_len(ep->emm, 3);
+	int32_t emm_len = check_sct_len(ep->emm, 3, sizeof(ep->emm));
 
 	memset(ep->hexserial, 0, 8);
 
@@ -722,7 +722,7 @@ static int32_t bulcrypt_card_info(struct s_reader *reader)
 				subs2, dec2bin_str(subs2, tmp));
 
 		// Configure your tiers to get subscription packets name resolution
-		// # Example oscam.tiers file
+		// # Example ncam.tiers file
 		// 5581:0001|Economic
 		// 5581:0002|Standard
 		// 5581:0004|Premium

@@ -19,9 +19,9 @@
 #include "../globals.h"
 
 #ifdef CARDREADER_SC8IN1
-#include "../oscam-lock.h"
-#include "../oscam-string.h"
-#include "../oscam-time.h"
+#include "../ncam-lock.h"
+#include "../ncam-string.h"
+#include "../ncam-time.h"
 #include "atr.h"
 #include "ifd_phoenix.h"
 #include "io_serial.h"
@@ -328,7 +328,7 @@ static int32_t sc8in1_command(struct s_reader *reader, unsigned char *buff,
 
 static int32_t mcrReadStatus(struct s_reader *reader, unsigned char *status)
 {
-	unsigned char buff[2] = "";
+	unsigned char buff[2];
 	buff[0] = 0x3f;
 	if(sc8in1_command(reader, buff, 1, 2, 0, 1, 0) < 0)
 		{ return ERROR; }
@@ -525,11 +525,11 @@ if (display) {
 	return OK;
 }
 
-static int32_t mcrHelloOscam(struct s_reader *reader)
+static int32_t mcrHelloNCam(struct s_reader *reader)
 {
-	// Display "OSCam" on MCR display
-	char helloOscam[5] = {'O', 'S', 'C', 'a', 'm'};
-	return MCR_DisplayText(reader, &helloOscam[0], 5, 100, 1);
+	// Display "NCam" on MCR display
+	char helloNCam[4] = {'N', 'C', 'a', 'm'};
+	return MCR_DisplayText(reader, &helloNCam[0], 4, 100, 1);
 }
 
 static int32_t mcr_generateStatisticsForDisplay(struct s_reader *reader)
@@ -945,7 +945,7 @@ static int32_t Sc8in1_Init(struct s_reader *reader)
 	// Gimmick
 	if(crdr_data->mcr_type)
 	{
-		mcrHelloOscam(reader);
+		mcrHelloNCam(reader);
 	}
 
 	return OK;

@@ -54,6 +54,13 @@ typedef int tommy_ssize_t; /**< Generic ssize_t type. */
 typedef uint32_t tommy_uint32_t; /**< Generic uint32_t type. */
 typedef uint64_t tommy_uint64_t; /**< Generic uint64_t type. */
 typedef uintptr_t tommy_uintptr_t; /**< Generic uintptr_t type. */
+#ifndef SIZE_MAX /* For eabi-gcc 4.7 */
+#ifdef __LP64__
+#define SIZE_MAX UINT64_MAX
+#else
+#define SIZE_MAX UINT32_MAX
+#endif
+#endif /* For eabi-gcc 4.7 end */
 #if SIZE_MAX == UINT64_MAX
 #define TOMMY_SIZE_BIT 64
 typedef uint64_t tommy_size_t; /**< Generic size_t type. */

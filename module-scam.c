@@ -2,14 +2,14 @@
 
 #include "globals.h"
 #ifdef MODULE_SCAM
-#include "oscam-client.h"
-#include "oscam-ecm.h"
-#include "oscam-net.h"
-#include "oscam-string.h"
-#include "oscam-reader.h"
-#include "oscam-lock.h"
-#include "oscam-time.h"
-#include "oscam-chk.h"
+#include "ncam-client.h"
+#include "ncam-ecm.h"
+#include "ncam-net.h"
+#include "ncam-string.h"
+#include "ncam-reader.h"
+#include "ncam-lock.h"
+#include "ncam-time.h"
+#include "ncam-chk.h"
 #include "cscrypt/des.h"
 
 struct scam_data
@@ -925,7 +925,7 @@ static void scam_server_send_serverversion(struct s_client *cl)
 {
 	uint8_t mbuf[64];
 	uint32_t i = 0;
-	char *version = "scam/3.60 oscam";
+	char *version = "scam/3.60 ncam";
 	uint8_t vlen = cs_strlen(version);
 
 	mbuf[i++] = 0x45; // server version data type

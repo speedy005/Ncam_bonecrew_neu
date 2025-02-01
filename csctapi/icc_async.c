@@ -1,17 +1,20 @@
 #include "../globals.h"
 #ifdef WITH_CARDREADER
-#include "../oscam-lock.h"
-#include "../oscam-string.h"
+#include "../ncam-lock.h"
+#include "../ncam-string.h"
 #include "icc_async.h"
 #include "protocol_t0.h"
 #include "io_serial.h"
 #include "ifd_phoenix.h"
-#include "../oscam-time.h"
+#include "../ncam-time.h"
 #ifdef READER_NAGRA_MERLIN
 #include "../cscrypt/fast_aes.h"
 #include "../cscrypt/sha256.h"
 #include "../cscrypt/mdc2.h"
 #include "../cscrypt/idea.h"
+#endif
+#ifdef WITH_CARDLIST
+#include "../cardlist.h"
 #endif
 
 #define OK 0
@@ -54,15 +57,12 @@ static void calculate_cak7_vars(struct s_reader *reader, const ATR *atr)
 	mbedtls_sha256_free(&ctx_sha256);
 	memcpy(reader->cak7_aes_key,aes_key,32);
 	memcpy(reader->cak7_aes_iv,aes_iv,16);
-	char tmp[128];
-	rdr_log(reader, "Initial AES: %s", cs_hexdump(1, reader->cak7_aes_key + 16, 16, tmp, sizeof(tmp)));
 }
 
 void calculate_cak7_cmd(struct s_reader *reader, uint8_t *cmdin,uint8_t cmdlen,uint8_t *cmdout)
 {
 	uint32_t crc = ccitt32_crc(cmdin+4, cmdlen-4);
 	i2b_buf(4, crc, cmdin);
-	rdr_log_dump_dbg(reader, D_READER, cmdin, cmdlen, "preparing data for writing to cardreader");
 	AesCtx ctx;
 	AesCtxIni(&ctx, reader->cak7_aes_iv, &reader->cak7_aes_key[16], KEY128, CBC);
 	AesEncrypt(&ctx, cmdin, cmdout, cmdlen);
@@ -77,104 +77,18 @@ void do_cak7_cmd(struct s_reader *reader,unsigned char *cta_res, uint16_t *p_cta
 	// head
 	req[0]=0x80;
 	req[1]=0xCA;
-	if(reader->protocol_type == ATR_PROTOCOL_TYPE_T0)
-	{
-		req[4]=inlen + 1;
-	}
-	else
-	{
-		req[4]=inlen;
-	}
+	// len
+	req[4]=inlen;
 	req[sizeof(req)-1]=resplen;
 	data[4]=(reader->cak7_seq>>16)&0xFF;
 	data[5]=(reader->cak7_seq>>8)&0xFF;
 	data[6]=(reader->cak7_seq)&0xFF;
 	calculate_cak7_cmd(reader,data,inlen,&req[5]);
-	rdr_log_dump_dbg(reader, D_READER, req, sizeof(req), "write to cardreader");
 	if(!ICC_Async_CardWrite(reader, req, sizeof(req), cta_res, p_cta_lr))
 	{
-		if(reader->protocol_type == ATR_PROTOCOL_TYPE_T0)
-		{
-			if(cta_res[*p_cta_lr - 2] == 0x61)
-			{
-				uint8_t resp[] = {0x00,0xC0,0x00,0x00,0x00};
-				memcpy(resp + 4,&cta_res[*p_cta_lr - 1],1);
-				rdr_log_dump_dbg(reader, D_READER, resp, sizeof(resp), "write to cardreader");
-				if(!ICC_Async_CardWrite(reader, resp, sizeof(resp), cta_res, p_cta_lr))
-				{
-					AesCtx ctx;
-					AesCtxIni(&ctx, reader->cak7_aes_iv, &reader->cak7_aes_key[16], KEY128, CBC);
-					AesDecrypt(&ctx, cta_res, cta_res, *p_cta_lr-2);
-				}
-				else
-				{
-					*p_cta_lr=0;
-				}
-			}
-			else if(cta_res[*p_cta_lr - 2] == 0x6F && cta_res[*p_cta_lr - 1] == 0x01)
-			{
-				rdr_log(reader, "card answered 6F01 - trying one more time");
-				rdr_log_dump_dbg(reader, D_READER, req, sizeof(req), "write to cardreader");
-				if(!ICC_Async_CardWrite(reader, req, sizeof(req), cta_res, p_cta_lr))
-				{
-					if(cta_res[*p_cta_lr - 2]  == 0x61)
-					{
-						uint8_t resp[] = {0x00,0xC0,0x00,0x00,0x00};
-						memcpy(resp + 4,&cta_res[*p_cta_lr - 1],1);
-						rdr_log_dump_dbg(reader, D_READER, resp, sizeof(resp), "write to cardreader");
-						if(!ICC_Async_CardWrite(reader, resp, sizeof(resp), cta_res, p_cta_lr))
-						{
-							AesCtx ctx;
-							AesCtxIni(&ctx, reader->cak7_aes_iv, &reader->cak7_aes_key[16], KEY128, CBC);
-							AesDecrypt(&ctx, cta_res, cta_res, *p_cta_lr-2);
-						}
-						else
-						{
-							*p_cta_lr=0;
-						}
-					}
-					else if(cta_res[*p_cta_lr - 2]  == 0x6F && cta_res[*p_cta_lr - 1] == 0x01)
-					{
-						rdr_log(reader, "card needs reinit");
-					}
-				}
-				else
-				{
-					*p_cta_lr=0;
-				}
-			}
-		}
-		else
-		{
-			if(cta_res[*p_cta_lr - 2] == 0x6F && cta_res[*p_cta_lr - 1] == 0x01)
-			{
-				rdr_log(reader, "card answered 6F01 - trying one more time");
-				rdr_log_dump_dbg(reader, D_READER, req, sizeof(req), "write to cardreader");
-				if(!ICC_Async_CardWrite(reader, req, sizeof(req), cta_res, p_cta_lr))
-				{
-					if(cta_res[*p_cta_lr - 2] == 0x6F && cta_res[*p_cta_lr - 1] == 0x01)
-					{
-						rdr_log(reader, "card needs reinit");
-					}
-					else
-					{
-						AesCtx ctx;
-						AesCtxIni(&ctx, reader->cak7_aes_iv, &reader->cak7_aes_key[16], KEY128, CBC);
-						AesDecrypt(&ctx, cta_res, cta_res, *p_cta_lr-2);
-					}
-				}
-				else
-				{
-					*p_cta_lr=0;
-				}
-			}
-			else
-			{
-				AesCtx ctx;
-				AesCtxIni(&ctx, reader->cak7_aes_iv, &reader->cak7_aes_key[16], KEY128, CBC);
-				AesDecrypt(&ctx, cta_res, cta_res, *p_cta_lr-2);
-			}
-		}
+		AesCtx ctx;
+		AesCtxIni(&ctx, reader->cak7_aes_iv, &reader->cak7_aes_key[16], KEY128, CBC);
+		AesDecrypt(&ctx, cta_res, cta_res, *p_cta_lr-2);
 	}
 	else
 	{
@@ -294,7 +208,7 @@ int32_t ICC_Async_Activate(struct s_reader *reader, ATR *atr, uint16_t deprecate
 	{
 		reader->crdr_flush = crdr_ops->flush; // Flush flag may be changed for each reader
 		call(crdr_ops->activate(reader, atr));
-		if((crdr_ops->skip_extra_atr_parsing) && (reader->cak7_mode == 0))
+		if(reader->typ == R_EMU)
 		{
 			return OK;
 		}
@@ -307,6 +221,14 @@ int32_t ICC_Async_Activate(struct s_reader *reader, ATR *atr, uint16_t deprecate
 	rdr_log(reader, "ATR: %s", cs_hexdump(1, atrarr, atr_size, tmp, sizeof(tmp)));
 	memcpy(reader->card_atr, atrarr, atr_size);
 	reader->card_atr_length = atr_size;
+#ifdef WITH_CARDLIST
+	memcpy(current.atr, cs_hexdump(1, atrarr, atr_size, tmp, sizeof(tmp)), atr_size * 3 - 1);
+	findatr(reader);
+	if(cs_strlen(current.info))
+	{
+		rdr_log(reader, "%s %s", cs_strlen(current.providername) ? current.providername : "card system", current.info);
+	}
+#endif
 
 	// Get ICC reader->convention
 	if(ATR_GetConvention(atr, &(reader->convention)) != ATR_OK)
@@ -334,53 +256,29 @@ int32_t ICC_Async_Activate(struct s_reader *reader, ATR *atr, uint16_t deprecate
 		return ERROR;
 	}
 
-	reader->cak7type = 0;
 #ifdef READER_NAGRA_MERLIN
+	bool need_nagra_layer_switch = false;
+	bool is_cak7 = false;
+
+	static const uint8_t hd03atr [] = {0x3F,0xFF,0x95,0x00,0xFF,0x91,0x81,0x71,0xA0,0x47,0x00,0x44,0x4E,0x41,0x53,0x50,0x31,0x39,0x30,0x20,0x4D,0x65,0x72,0x51,0x32,0x35,0x4F}; //HD03, HD03A (CAK6.3 Mode)
+	static const uint8_t hd03atr2[] = {0x3F,0xFF,0x95,0x00,0xFF,0x91,0x81,0x71,0xFE,0x57,0x00,0x44,0x4E,0x41,0x53,0x50,0x34,0x31,0x30,0x20,0x52,0x65,0x76,0x51,0x32,0x35,0x17}; //HD03, HD03A (CAK7 Mode)
+	static const uint8_t hd04atr [] = {0x3F,0xFF,0x95,0x00,0xFF,0x91,0x81,0x71,0xFE,0x57,0x00,0x44,0x4E,0x41,0x53,0x50,0x34,0x32,0x30,0x20,0x52,0x65,0x76,0x53,0x36,0x30,0x17}; //HD04, HD04A, HD04B (CAK7 only)
+	static const uint8_t hd04hatr[] = {0x3F,0xFF,0x95,0x00,0xFF,0x91,0x81,0x71,0xFE,0x57,0x00,0x44,0x4E,0x41,0x53,0x50,0x34,0x32,0x30,0x20,0x52,0x65,0x76,0x53,0x36,0x34,0x13}; //HD04H (CAK7 only)
+	static const uint8_t hd05atr [] = {0x3F,0xFF,0x95,0x00,0xFF,0x91,0x81,0x71,0xFE,0x57,0x00,0x44,0x4E,0x41,0x53,0x50,0x34,0x35,0x30,0x20,0x52,0x65,0x76,0x57,0x36,0x30,0x14}; //HD05, HD05A (CAK7 only)
 
 	ATR_GetRaw(atr, atrarr, &atr_size);
+	if(!memcmp(hd03atr, atrarr, atr_size)) need_nagra_layer_switch = true;
+	if(!memcmp(hd03atr2, atrarr, atr_size) || !memcmp(hd04atr, atrarr, atr_size) || !memcmp(hd04hatr, atrarr, atr_size) || !memcmp(hd05atr, atrarr, atr_size)) is_cak7 = true;
 
-	if((memcmp(atrarr + 8, "DNASP40", 7) == 0) || (memcmp(atrarr + 11, "DNASP41", 7) == 0) || (memcmp(atrarr + 11, "DNASP48", 7) == 0))
+	if(is_cak7)
 	{
-		rdr_log(reader, "card needs reset before init");
-		memset(atr, 0, 1);
-		call(crdr_ops->activate(reader, atr)); //try to read the atr of this layer
-		ATR_GetRaw(atr, atrarr, &atr_size);
-		rdr_log(reader,"ATR: %s", cs_hexdump(1, atrarr, atr_size, tmp, sizeof(tmp)));
-		// Parse_ATR and InitCard need to be included in lock because they change parity of serial port
-		if(crdr_ops->lock)
-		{
-			crdr_ops->lock(reader);
-		}
-		int32_t ret1 = Parse_ATR(reader, atr, deprecated);
-		if(crdr_ops->unlock)
-		{
-			crdr_ops->unlock(reader);
-		}
-		if(ret1)
-		{
-			rdr_log(reader, "ERROR: Parse_ATR returned error");
-			return ERROR;
-		}
-	}
-
-	if((memcmp(atrarr + 8, "DNASP4", 6) == 0) || (memcmp(atrarr + 11, "DNASP4", 6) == 0))
-	{
-		rdr_log(reader, "detected card in CAK7 mode");
+		rdr_log(reader, "detected nagra merlin card in CAK7 mode");
 		calculate_cak7_vars(reader, atr);
-		if((atrarr[2] == 0x95) && (atrarr[3] == 0x00) && (atrarr[4] == 0xFF) && (atrarr[5] == 0x50) && (atrarr[6] == 0x80) && (atrarr[7] == 0x1C))
-		{
-			reader->cak7type = 3;
-		}
-		else
-		{
-			reader->cak7type = 1;
-		}
 	}
-	else if(((memcmp(atrarr + 7, "pp", 2) == 0 && ((atrarr[9]&0x0F) >= 10)) || (memcmp(atrarr + 11, "DNASP18", 7) == 0) || (memcmp(atrarr + 11, "DNASP19", 7) == 0) || (memcmp(atrarr + 11, "DNASP1A", 7) == 0)) && reader->cak7_mode)
+	else if(need_nagra_layer_switch)
 	{
-		rdr_log(reader, "detected card in CAK6/Seca mode -> try switch to Nagra CAK7");
-		uint8_t changerom_handshake[22];
-		memset(changerom_handshake, 0x00, 22);
+		rdr_log(reader, "detected nagra merlin card in legacy mode -> try switch nagra layer to CAK7");
+		uint8_t changerom_handshake[] = { 0x80, 0xCA, 0x00, 0x00, 0x11, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10 };
 
 		calculate_changerom_cmd(reader, atr, &changerom_handshake[5]);
 		memset(reader->rom, 0, 15);
@@ -388,8 +286,6 @@ int32_t ICC_Async_Activate(struct s_reader *reader, ATR *atr, uint16_t deprecate
 		memset(cta_res, 0, CTA_RES_LEN);
 		uint16_t cta_lr;
 
-		changerom_handshake[0] = 0x80;
-		changerom_handshake[1] = 0xCA;
 		changerom_handshake[4] = 0x11; // 0x11: length of data we will send
 		uint8_t cta_res1_ok = 0x61;
 		uint8_t cta_res2_ok = 0x10;
@@ -402,10 +298,6 @@ int32_t ICC_Async_Activate(struct s_reader *reader, ATR *atr, uint16_t deprecate
 			cta_res2_ok = 0x00;
 		}
 
-		changerom_handshake[21] = 0x10;
-
-		reader->cak7type = 1;
-		rdr_log_dump_dbg(reader, D_READER, changerom_handshake, sizeof(changerom_handshake), "write to cardreader");
 		if(!ICC_Async_CardWrite(reader, changerom_handshake, sizeof(changerom_handshake), cta_res, &cta_lr))
 		{
 			if(cta_res[cta_lr-2] == cta_res1_ok && cta_res[cta_lr-1] == cta_res2_ok)
@@ -414,30 +306,16 @@ int32_t ICC_Async_Activate(struct s_reader *reader, ATR *atr, uint16_t deprecate
 				memset(atr, 0, 1);
 				call(crdr_ops->activate(reader, atr)); //try to read the atr of this layer
 				ATR_GetRaw(atr, atrarr, &atr_size);
-				rdr_log(reader,"ATR: %s", cs_hexdump(1, atrarr, atr_size, tmp, sizeof(tmp)));
+				rdr_log(reader,"Nagra layer ATR: %s", cs_hexdump(1, atrarr, atr_size, tmp, sizeof(tmp)));
 				calculate_cak7_vars(reader, atr);
-				if(reader->protocol_type == ATR_PROTOCOL_TYPE_T0)
-				{
-					reader->cak7type = 3;
-				}
-				else
-				{
-					reader->cak7type = 1;
-				}
-
 				if(crdr_ops->lock)
 				{
 					crdr_ops->lock(reader);
 				}
-				int32_t ret2 = Parse_ATR(reader, atr, deprecated);
+				Parse_ATR(reader, atr, deprecated);
 				if(crdr_ops->unlock)
 				{
 					crdr_ops->unlock(reader);
-				}
-				if(ret2)
-				{
-					rdr_log(reader, "ERROR: Parse_ATR returned error");
-					return ERROR;
 				}
 			}
 			else
@@ -495,7 +373,7 @@ int32_t ICC_Async_CardWrite(struct s_reader *reader, unsigned char *command, uin
 		case ATR_PROTOCOL_TYPE_T1:
 			ret = Protocol_T1_Command(reader, command, command_len, rsp, lr);
 			type = 1;
-			if(ret != OK && !crdr_ops->skip_t1_command_retries && reader->cak7type == 0)
+			if(ret != OK && !crdr_ops->skip_t1_command_retries)
 			{
 				//try to resync
 				rdr_log(reader, "Resync error: readtimeouts %d/%d (max/min) us, writetimeouts %d/%d (max/min) us", reader->maxreadtimeout, reader->minreadtimeout, reader->maxwritetimeout, reader->minwritetimeout);
@@ -531,7 +409,7 @@ int32_t ICC_Async_CardWrite(struct s_reader *reader, unsigned char *command, uin
 		}
 		try++;
 	}
-	while((try < 3) && (ret != OK) && (((type == 0 || type == 1) && reader->cak7type == 0) || type == 14)); // always do one retry when failing
+	while((try < 3) && (ret != OK)); // always do one retry when failing
 	if(crdr_ops->unlock)
 	{
 		crdr_ops->unlock(reader);
@@ -555,7 +433,7 @@ int32_t ICC_Async_GetTimings(struct s_reader *reader, uint32_t wait_etu)
 int32_t ICC_Async_Transmit(struct s_reader *reader, uint32_t size, uint32_t expectedlen, unsigned char *data, uint32_t delay, uint32_t timeout)
 {
 	const struct s_cardreader *crdr_ops = reader->crdr;
-	if (!crdr_ops) return ERROR;
+	if(!crdr_ops || !crdr_ops->transmit) return ERROR;
 
 	if(expectedlen)
 	{
@@ -584,7 +462,7 @@ int32_t ICC_Async_Transmit(struct s_reader *reader, uint32_t size, uint32_t expe
 int32_t ICC_Async_Receive(struct s_reader *reader, uint32_t size, unsigned char *data, uint32_t delay, uint32_t timeout)
 {
 	const struct s_cardreader *crdr_ops = reader->crdr;
-	if (!crdr_ops) return ERROR;
+	if(!crdr_ops || !crdr_ops->receive) return ERROR;
 
 	rdr_log_dbg(reader, D_IFD, "Receive size %d bytes, delay %d us, timeout=%d us", size, delay, timeout);
 	call(crdr_ops->receive(reader, data, size, delay, timeout));
@@ -805,6 +683,12 @@ static int32_t Parse_ATR(struct s_reader *reader, ATR *atr, uint16_t deprecated)
 		reader->read_timeout = 1000000; // in us
 		bool PPS_success = 0;
 		bool NeedsPTS = ((reader->protocol_type != ATR_PROTOCOL_TYPE_T14) && (numprottype > 1 || (atr->ib[0][ATR_INTERFACE_BYTE_TA].present == 1 && atr->ib[0][ATR_INTERFACE_BYTE_TA].value != 0x11) || N == 255)); //needs PTS according to old ISO 7816
+		if(atr->hbn >= 8 && !memcmp(atr->hb, "DVN TECH", 8))
+		{
+			NeedsPTS = 0;
+			FI = 1;
+			D = 2;
+		}
 		if(NeedsPTS && deprecated == 0)
 		{
 			//                       PTSS  PTS0  PTS1  PCK

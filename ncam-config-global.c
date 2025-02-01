@@ -659,24 +659,16 @@ void cache_fixups_fn(void *UNUSED(var))
 
 static bool cache_should_save_fn(void *UNUSED(var))
 {
-	return cfg.delay > CS_DELAY || cfg.max_cache_time != DEFAULT_MAX_CACHE_TIME
+	return cfg.delay > 0 || cfg.max_cache_time != 15
 #ifdef CS_CACHEEX
 #ifdef CS_CACHEEX_AIO
-			|| cfg.cw_cache_size > 0 || cfg.cw_cache_memory > 0 || cfg.cw_cache_settings.cwchecknum || cfg.ecm_cache_size > 0
-			|| cfg.ecm_cache_memory > 0 || cfg.ecm_cache_droptime > 0 || cfg.cacheex_dropdiffs > 0 || cfg.cacheex_push_lg_groups
-			|| cfg.cacheex_lg_only_remote_settings != 1 || cfg.cacheex_localgenerated_only > 0 || cfg.cacheex_localgenerated_only_caidtab.ctnum
-			|| cfg.cacheex_lg_only_tab.nfilts || cfg.cacheex_lg_only_in_aio_only > 0 || cfg.cacheex_localgenerated_only_in > 0
-			|| cfg.cacheex_localgenerated_only_in_caidtab.ctnum || cfg.cacheex_lg_only_in_tab.nfilts || cfg.cacheex_filter_caidtab.cevnum
-			|| cfg.cacheex_filter_caidtab_aio.cevnum || cfg.cacheex_nopushafter_tab.cvnum || cfg.waittime_block_start > 0 || cfg.waittime_block_time > 0
-
+			|| cfg.cacheex_lg_only_tab.nfilts || cfg.cacheex_lg_only_in_tab.nfilts || cfg.cacheex_lg_only_remote_settings || cfg.cacheex_lg_only_in_aio_only || cfg.cacheex_push_lg_groups || cfg.cacheex_filter_caidtab_aio.cevnum || cfg.cacheex_filter_caidtab.cevnum || cfg.cacheex_localgenerated_only_caidtab.ctnum || cfg.cacheex_localgenerated_only_in_caidtab.ctnum || cfg.cacheex_localgenerated_only_in || cfg.cacheex_localgenerated_only || cfg.cacheex_dropdiffs || cfg.cw_cache_settings.cwchecknum || cfg.cw_cache_size > 0 || cfg.cw_cache_memory > 0 || cfg.cacheex_wait_timetab.cevnum || cfg.cacheex_enable_stats > 0 || cfg.csp_port || cfg.csp.filter_caidtab.cevnum || cfg.csp.allow_request == 0 || cfg.csp.allow_reforward > 0
+#else
+			|| cfg.cacheex_wait_timetab.cevnum || cfg.cacheex_enable_stats > 0 || cfg.csp_port || cfg.csp.filter_caidtab.cevnum || cfg.csp.allow_request == 0 || cfg.csp.allow_reforward > 0
 #endif
-			|| cfg.max_hitcache_time != DEFAULT_MAX_HITCACHE_TIME || cfg.cacheex_wait_timetab.cevnum || cfg.cacheex_mode1_delay_tab.cvnum
-			|| cfg.cacheex_enable_stats > 0 || cfg.csp_port > 0 || IP_ISSET(cfg.csp_srvip) || cfg.csp.filter_caidtab.cevnum || cfg.csp.allow_request != 1
-			|| cfg.csp.allow_reforward > 0 || cfg.cacheex_cwcheck_tab.cwchecknum || cfg.wait_until_ctimeout > 0 || cfg.csp.block_fakecws > 0
 #endif
 #ifdef CW_CYCLE_CHECK
-			|| cfg.cwcycle_check_enable || cfg.cwcycle_check_caidtab.ctnum || cfg.maxcyclelist != 500 || cfg.keepcycletime != 15 || cfg.onbadcycle != 1
-			|| cfg.cwcycle_dropold != 1 || cfg.cwcycle_sensitive != 4 || cfg.cwcycle_allowbadfromffb > 0 || cfg.cwcycle_usecwcfromce > 0
+			|| cfg.cwcycle_check_enable || cfg.cwcycle_check_caidtab.ctnum || cfg.maxcyclelist != 500 || cfg.keepcycletime || cfg.onbadcycle || cfg.cwcycle_dropold || cfg.cwcycle_sensitive || cfg.cwcycle_allowbadfromffb || cfg.cwcycle_usecwcfromce
 #endif
 			;
 }
@@ -685,13 +677,13 @@ static const struct config_list cache_opts[] =
 {
 	DEF_OPT_SAVE_FUNC(cache_should_save_fn),
 	DEF_OPT_FIXUP_FUNC(cache_fixups_fn),
-	DEF_OPT_UINT32("delay"		      , OFS(delay)	            , CS_DELAY),
-	DEF_OPT_INT32("max_time"	      , OFS(max_cache_time)	    , DEFAULT_MAX_CACHE_TIME),
+	DEF_OPT_UINT32("delay"                , OFS(delay)                  , CS_DELAY),
+	DEF_OPT_INT32("max_time"              , OFS(max_cache_time)         , DEFAULT_MAX_CACHE_TIME),
 #ifdef CS_CACHEEX
 #ifdef CS_CACHEEX_AIO
 	DEF_OPT_UINT32("cw_cache_size"        , OFS(cw_cache_size)          , 0),
 	DEF_OPT_UINT32("cw_cache_memory"      , OFS(cw_cache_memory)        , 0),
-	DEF_OPT_FUNC("cw_cache_settings"      , OFS(cw_cache_settings)      , cacheex_cwcheck_tab_fn),
+	DEF_OPT_FUNC("cw_cache_settings"      , OFS(cw_cache_settings)    	, cacheex_cwcheck_tab_fn),
 	DEF_OPT_UINT32("ecm_cache_size"       , OFS(ecm_cache_size)         , 0),
 	DEF_OPT_UINT32("ecm_cache_memory"     , OFS(ecm_cache_memory)       , 0),
 	DEF_OPT_INT32("ecm_cache_droptime"    , OFS(ecm_cache_droptime)     , 0),
@@ -946,22 +938,18 @@ static bool streamrelay_should_save_fn(void *UNUSED(var))
 static const struct config_list streamrelay_opts[] =
 {
 	DEF_OPT_SAVE_FUNC(streamrelay_should_save_fn),
-	DEF_OPT_INT8("stream_relay_enabled"       , OFS(stream_relay_enabled),        0),
-	DEF_OPT_INT32("stream_relay_port"         , OFS(stream_relay_port),           17999),
-	DEF_OPT_STR("stream_relay_user"           , OFS(stream_relay_user),           NULL),
-	DEF_OPT_FUNC("stream_relay_ctab"          , OFS(stream_relay_ctab),           check_caidtab_fn),
 	DEF_OPT_STR("stream_source_host"          , OFS(stream_source_host),          "127.0.0.1"),
-	DEF_OPT_INT8("stream_client_source_host"  , OFS(stream_client_source_host),   1),
 	DEF_OPT_INT32("stream_source_port"        , OFS(stream_source_port),          DEFAULT_STREAM_SOURCE_PORT),
 	DEF_OPT_STR("stream_source_auth_user"     , OFS(stream_source_auth_user),     NULL),
 	DEF_OPT_STR("stream_source_auth_password" , OFS(stream_source_auth_password), NULL),
+#ifdef MODULE_RADEGAST
+	DEF_OPT_INT8("stream_client_source_host"  , OFS(stream_client_source_host),   0),
+#endif
+	DEF_OPT_INT32("stream_relay_port"         , OFS(stream_relay_port),           17999),
+	DEF_OPT_INT8("stream_relay_enabled"       , OFS(stream_relay_enabled),        0),
 	DEF_OPT_UINT32("stream_relay_buffer_time" , OFS(stream_relay_buffer_time),    0),
 	DEF_OPT_UINT8("stream_relay_reconnect_count" , OFS(stream_relay_reconnect_count), 0),
-	DEF_OPT_INT8("stream_display_client"      , OFS(stream_display_client),        0),
-	DEF_OPT_INT8("stream_reuse_client"        , OFS(stream_reuse_client),          0),
-#ifdef WEBIF
-	DEF_OPT_INT8("stream_hide_client"         , OFS(stream_hide_client),           0),
-#endif
+	DEF_OPT_FUNC("stream_relay_ctab"          , OFS(stream_relay_ctab),           check_caidtab_fn),
 #ifdef WITH_EMU
 	DEF_OPT_INT8("stream_emm_enabled"         , OFS(emu_stream_emm_enabled),      0),
 	DEF_OPT_UINT32("stream_ecm_delay"         , OFS(emu_stream_ecm_delay),        600),

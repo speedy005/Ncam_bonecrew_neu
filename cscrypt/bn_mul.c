@@ -425,11 +425,12 @@ void bn_mul_low_recursive(BN_ULONG *r, BN_ULONG *a, BN_ULONG *b, int n2,
  * l is the low words of the output.
  * t needs to be n2*3
  */
-void bn_mul_high(BN_ULONG *r, BN_ULONG *a, BN_ULONG *b, BN_ULONG *l, int n2, BN_ULONG *t)
+void bn_mul_high(BN_ULONG *r, BN_ULONG *a, BN_ULONG *b, BN_ULONG *l, int n2,
+				 BN_ULONG *t)
 {
 	int i, n;
 	int c1, c2;
-	int neg = 0, oneg;
+	int neg, oneg;
 	BN_ULONG ll, lc, *lp, *mp;
 
 # ifdef BN_COUNT
@@ -438,6 +439,7 @@ void bn_mul_high(BN_ULONG *r, BN_ULONG *a, BN_ULONG *b, BN_ULONG *l, int n2, BN_
 	n = n2 / 2;
 
 	/* Calculate (al-ah)*(bh-bl) */
+	neg = 0;
 	c1 = bn_cmp_words(&(a[0]), &(a[n]), n);
 	c2 = bn_cmp_words(&(b[n]), &(b[0]), n);
 	switch(c1 * 3 + c2)
@@ -495,16 +497,17 @@ void bn_mul_high(BN_ULONG *r, BN_ULONG *a, BN_ULONG *b, BN_ULONG *l, int n2, BN_
 	if(l != NULL)
 	{
 		lp = &(t[n2 + n]);
-		c1 = (int)(bn_add_words(lp, &(r[0]), &(l[0]), n));
+		bn_add_words(lp, &(r[0]), &(l[0]), n);
 	}
 	else
 	{
-		c1 = 0;
 		lp = &(r[0]);
 	}
 
 	if(neg)
-		{ neg = (int)(bn_sub_words(&(t[n2]), lp, &(t[0]), n)); }
+	{
+		bn_sub_words(&(t[n2]), lp, &(t[0]), n);
+	}
 	else
 	{
 		bn_add_words(&(t[n2]), lp, &(t[0]), n);

@@ -1,14 +1,14 @@
 /*
- * OSCam self tests
+ * NCam self tests
  * This file contains tests for different config parsers and generators
  * Build this file using `make tests`
  */
 #include "globals.h"
 
-#include "oscam-array.h"
-#include "oscam-string.h"
-#include "oscam-conf-chk.h"
-#include "oscam-conf-mk.h"
+#include "ncam-array.h"
+#include "ncam-string.h"
+#include "ncam-conf-chk.h"
+#include "ncam-conf-mk.h"
 
 struct test_vec
 {

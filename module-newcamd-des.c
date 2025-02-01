@@ -1,6 +1,6 @@
 #include "globals.h"
 #include "module-newcamd-des.h"
-#include "oscam-string.h"
+#include "ncam-string.h"
 
 #define DES_ECS2_DECRYPT (DES_IP | DES_IP_1 | DES_RIGHT)
 #define DES_ECS2_CRYPT   (DES_IP | DES_IP_1)
@@ -355,7 +355,7 @@ void nc_des(uint8_t key[], uint8_t mode, uint8_t data[])
 	uint8_t right[8];
 	uint8_t *p = left;
 
-	short DESShift = (mode & DES_RIGHT) ? 0x8103 : 0xc081;
+	unsigned short DESShift = (mode & DES_RIGHT) ? 0x8103 : 0xc081;
 
 	for(i = 3; i > 0; i--)
 	{

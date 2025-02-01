@@ -5,8 +5,8 @@
 #ifdef LEDSUPPORT
 
 #include "module-led.h"
-#include "oscam-string.h"
-#include "oscam-time.h"
+#include "ncam-string.h"
+#include "ncam-time.h"
 
 #if defined(__arm__)
 struct s_arm_led
@@ -204,9 +204,9 @@ static void arm_led(int32_t led, int32_t action)
 	}
 	if(arm_led_thread)
 	{
-		// arm_led_thread_main is not started at oscam startup
+		// arm_led_thread_main is not started at ncam startup
 		// when first arm_led calls happen
-		pthread_kill(arm_led_thread, OSCAM_SIGNAL_WAKEUP);
+		pthread_kill(arm_led_thread, NCAM_SIGNAL_WAKEUP);
 	}
 }
 

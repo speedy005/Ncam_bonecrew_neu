@@ -242,7 +242,6 @@ tommy_inline void tommy_list_insert_head(tommy_list* list, tommy_node* node, voi
 tommy_inline void tommy_list_insert_tail(tommy_list* list, tommy_node* node, void* data)
 {
 	tommy_list_insert_tail_check(list, node);
-
 	node->data = data;
 }
 

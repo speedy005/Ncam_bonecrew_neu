@@ -237,11 +237,11 @@ static int32_t unlock_parental(struct s_reader *reader)
 	{
 		if(strcmp(reader->pincode, "none"))
 		{
-			rdr_log(reader, "Can't disable parental lock. Wrong PIN? OSCam used %s!", reader->pincode);
+			rdr_log(reader, "Can't disable parental lock. Wrong PIN? NCam used %s!", reader->pincode);
 		}
 		else
 		{
-			rdr_log(reader, "Can't disable parental lock. Wrong PIN? OSCam used 0000!");
+			rdr_log(reader, "Can't disable parental lock. Wrong PIN? NCam used 0000!");
 		}
 	}
 	else
@@ -441,14 +441,7 @@ static int32_t seca_do_ecm(struct s_reader *reader, const ECM_REQUEST *er, struc
 		if((cta_res[0] == 0x93) && (cta_res[1] == 0x02))
 		{
 			write_cmd(ins3a, NULL); // get cw
-			if(er->ecm[2] > 0x61 && er->ecm[7] == 0x5C && er->ecm[100] == 0x0B)
-			{
-				rdr_log(reader, "reinit card in CAK7 mode");
-			}
-			else
-			{
-				snprintf(ea->msglog, MSGLOGSIZE, "unsubscribed 93 02");
-			}
+			snprintf(ea->msglog, MSGLOGSIZE, "unsubscribed 93 02");
 			return ERROR;
 		} // exit if unsubscribed
 

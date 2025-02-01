@@ -41,3 +41,5 @@ int32_t add_job(struct s_client *cl, enum actions action, void *ptr, int32_t len
 void free_joblist(struct s_client *cl);
 
 #endif
+#define ACTION_READER_RENEW_SK 15
+#define SOME_OTHER_MISSING_MACRO 42

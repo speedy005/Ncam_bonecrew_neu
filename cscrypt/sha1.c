@@ -82,6 +82,9 @@ A million repetitions of "a"
 
 #include <stdio.h>
 #include <string.h>
+#ifdef __ANDROID__
+#include <endian.h>
+#endif
 
 #include "sha1.h"
 
@@ -124,8 +127,7 @@ void SHAPrintContext(SHA_CTX *context, char *msg)
 /* Hash a single 512-bit block. This is the core of the algorithm. */
 void SHA1_Transform(uint32_t state[5], const uint8_t buffer[64])
 {
-	uint32_t a = 0, b = 0, c = 0, d = 0, e = 0;
-
+	uint32_t a, b, c, d, e;
 	typedef union
 	{
 		uint8_t c[64];
@@ -236,7 +238,6 @@ void SHA1_Transform(uint32_t state[5], const uint8_t buffer[64])
 	state[2] += c;
 	state[3] += d;
 	state[4] += e;
-
 }
 
 

@@ -32,12 +32,13 @@
 		</TR>
 		<TR><TD><A>Listen port:</A></TD><TD><input name="listen_port" class="short" type="text" maxlength="5" value="##LISTENPORT##"> TCP port to listen instead of camd.socket</TD></TR>
 		<TR><TD><A>Delayer:</A></TD><TD><input name="delayer" class="withunit short" type="text" maxlength="4" value="##DELAYER##"> ms</TD></TR>
+##WISOCKETID##
 		<TR><TD><A>Enable ecm.info file:</A></TD><TD><input name="ecminfo_file" type="checkbox" value="1" ##ECMINFOFILECHECKED##><label></label>
 		<TR><TD><A>ecm.info type:</A></TD>
 			<TD>
 				<select name="ecminfo_type">
-					<option value="0" ##ECMINFOTYPESELECTED0##>0 - oscam</option>
-					<option value="1" ##ECMINFOTYPESELECTED1##>1 - oscam (ecmtime in ms)</option>
+					<option value="0" ##ECMINFOTYPESELECTED0##>0 - ncam</option>
+					<option value="1" ##ECMINFOTYPESELECTED1##>1 - ncam (ecmtime in ms)</option>
 					<option value="2" ##ECMINFOTYPESELECTED2##>2 - wicardd</option>
 					<option value="3" ##ECMINFOTYPESELECTED3##>3 - mgcamd</option>
 					<option value="4" ##ECMINFOTYPESELECTED4##>4 - cccam</option>
@@ -56,5 +57,13 @@
 			</TD>
 		</TR>
 		<TR><TD><A>Write detected prov name to srvid:</A></TD><TD><input name="write_sdt_prov" type="checkbox" value="1" ##WRITESDTPROVCHECKED##><label></label>
-##TPLEXTENDEDCWAPI##
+		<TR><TD><A>API for extended CWs</A></TD>
+			<TD>
+				<select name="extended_cw_api">
+					<option value="0" ##EXTENDEDCWAPISELECTED0##>0 - none (disabled)</option>
+					<option value="1" ##EXTENDEDCWAPISELECTED1##>1 - OE2.2</option>
+					<option value="2" ##EXTENDEDCWAPISELECTED2##>2 - OE2.0</option>
+				</select>
+			</TD>
+		</TR>
 ##TPLDEMUXERFIX##

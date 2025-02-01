@@ -1,22 +1,22 @@
 #define MODULE_LOG_PREFIX "cccam"
 
 #include "globals.h"
-#include "oscam-array.h"
+#include "ncam-array.h"
 
 #if defined(CS_CACHEEX) && defined(MODULE_CCCAM)
 
 #include "module-cacheex.h"
 #include "module-cccam-data.h"
 #include "module-cccam-cacheex.h"
-#include "oscam-cache.h"
-#include "oscam-client.h"
-#include "oscam-ecm.h"
-#include "oscam-string.h"
-#include "oscam-chk.h"
-#include "oscam-reader.h"
+#include "ncam-cache.h"
+#include "ncam-client.h"
+#include "ncam-ecm.h"
+#include "ncam-string.h"
+#include "ncam-chk.h"
+#include "ncam-reader.h"
 #ifdef CS_CACHEEX_AIO
-#include "oscam-chk.h"
-#include "oscam-config.h"
+#include "ncam-chk.h"
+#include "ncam-config.h"
 #endif
 
 #define CSP_HASH_SWAP(n) (((((uint32_t)(n) & 0xFF)) << 24) | \
@@ -660,7 +660,7 @@ void cc_cacheex_feature_trigger(struct s_client *cl, int32_t feature, uint8_t mo
 			break;
 		// aio-version
 		case 32: ;
-			uint8_t token[14];
+			uint8_t token[12];
 
 			// bitfield
 			i2b_buf(2, feature, payload + i);
@@ -867,7 +867,7 @@ void cc_cacheex_feature_request_reply(struct s_client *cl)
 	int32_t size = 2;
 	uint8_t rbuf[size];
 
- 	i2b_buf(2, CACHEEX_FEATURES, rbuf);
+	i2b_buf(2, CACHEEX_FEATURES, rbuf);
 	cc_cmd_send(cl, rbuf, size, MSG_CACHE_FEATURE_EXCHANGE_REPLY);
 }
 
@@ -1195,7 +1195,7 @@ static int32_t cc_cacheex_push_out(struct s_client *cl, struct ecm_request_t *er
 
 	uint8_t *ofs = buf + 20;
 
-	// write oscam ecmd5
+	// write ncam ecmd5
 	memcpy(ofs, er->ecmd5, sizeof(er->ecmd5)); // 16
 	ofs += sizeof(er->ecmd5);
 

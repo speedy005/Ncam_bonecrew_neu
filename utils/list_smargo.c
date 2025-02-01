@@ -76,7 +76,7 @@ static void smartreader_check_endpoint(libusb_device *usb_dev, libusb_device_han
 					}
 				}
 			}
-
+			
 			if(nb_endpoint_ok == 2)
 			{
 				busid = libusb_get_bus_number(usb_dev);
@@ -86,7 +86,7 @@ static void smartreader_check_endpoint(libusb_device *usb_dev, libusb_device_han
 				libusb_get_string_descriptor_ascii(handle, usbdesc.iSerialNumber, iserialbuffer, sizeof(iserialbuffer));
 				libusb_get_string_descriptor_ascii(handle, usbdesc.iProduct, iproductbuffer, sizeof(iproductbuffer));
 				if ((!((!strcasecmp(productptr, "Triple Reader+")) && (m == 2))) && (!((!strcasecmp(productptr, "Smartreader2 plus")) && (m == 3)))) {
-				printf("bus %03d, device %03d : %04x:%04x %s (type=%s, in_ep=%02x, out_ep=%02x; insert in oscam.server 'device = %s%sSerial:%s')\n",
+				printf("bus %03d, device %03d : %04x:%04x %s (type=%s, in_ep=%02x, out_ep=%02x; insert in ncam.server 'device = %s%sSerial:%s')\n",
 					   busid, devid,
 					   usbdesc.idVendor, usbdesc.idProduct, strlen(productptr) > 0 ? productptr : "Smartreader",
 					   typename_str[reader_types[m].rdrtypename], reader_types[m].in_ep, reader_types[m].out_ep,

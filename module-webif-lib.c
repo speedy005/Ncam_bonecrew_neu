@@ -6,12 +6,12 @@
 #include "cscrypt/md5.h"
 #include "module-webif-lib.h"
 #include "module-webif-tpl.h"
-#include "oscam-config.h"
-#include "oscam-files.h"
-#include "oscam-lock.h"
-#include "oscam-string.h"
-#include "oscam-time.h"
-#include "oscam-net.h"
+#include "ncam-config.h"
+#include "ncam-files.h"
+#include "ncam-lock.h"
+#include "ncam-string.h"
+#include "ncam-time.h"
+#include "ncam-net.h"
 #if defined(__linux__)
 	#include <sys/sysinfo.h>
 #elif defined(__APPLE__)
@@ -408,18 +408,21 @@ void send_header304(FILE *f, char *extraheader)
 /*
  * function for sending files.
  */
+#if defined(__GNUC__) && (__GNUC__ >= 12)
+#pragma GCC diagnostic ignored "-Wrestrict" /* Fixme: allocated... */
+#endif
 void send_file(FILE *f, char *filename, char *subdir, time_t modifiedheader, uint32_t etagheader, char *extraheader)
 {
 	int8_t filen = 0;
 	int32_t size = 0;
-	char *mimetype = "";
-	char *result = " ";
-	char *allocated = NULL;
+	char *mimetype = "", *result = " ", *allocated = NULL;
 	time_t moddate;
 	char path[255];
 	char *CSS = NULL;
 	char *JSCRIPT = NULL;
 	char *JQUERY = NULL;
+	char *TOUCH_CSS = NULL;
+	char *TOUCH_JSCRIPT = NULL;
 
 	if(!strcmp(filename, "CSS"))
 	{
@@ -436,7 +439,7 @@ void send_file(FILE *f, char *filename, char *subdir, time_t modifiedheader, uin
 		filename = cfg.http_jscript ? cfg.http_jscript : "";
 		if(subdir && cs_strlen(subdir) > 0)
 		{
-			filename = tpl_getFilePathInSubdir(cfg.http_tpl ? cfg.http_tpl : "", subdir, "oscam", ".js", path, 255);
+			filename = tpl_getFilePathInSubdir(cfg.http_tpl ? cfg.http_tpl : "", subdir, "ncam", ".js", path, 255);
 		}
 		mimetype = "text/javascript";
 		filen = 2;
@@ -454,65 +457,74 @@ void send_file(FILE *f, char *filename, char *subdir, time_t modifiedheader, uin
 	if(cs_strlen(filename) > 0 && file_exists(filename))
 	{
 		struct stat st;
-		FILE *fp = NULL;
-		int32_t readen = 0;
-		uint32_t CSS_sz = 0;
-		char separator[255];
-
 		stat(filename, &st);
 		moddate = st.st_mtime;
-		memset(separator, 0, sizeof(separator));
-
-		if(filen == 1 && cfg.http_prepend_embedded_css)    // Prepend Embedded CSS
-		{
-			CSS = tpl_getUnparsedTpl("CSS", 1, "");
-			snprintf(separator, sizeof(separator), "\n/* Begin embedded CSS File: %s */\n", cfg.http_css);
-		}
-
 		// We need at least size 1 or keepalive gets problems on some browsers...
 		if(st.st_size > 0)
 		{
-			if((fp = fopen(filename, "r")) == NULL)
-				return;
-
-			if (CSS)
-				CSS_sz += cs_strlen(CSS);
-
-			if(!cs_malloc(&allocated, st.st_size + CSS_sz + cs_strlen(separator) + 1))
+			FILE *fp;
+			int32_t readen;
+			if((fp = fopen(filename, "r")) == NULL) { return; }
+			if(!cs_malloc(&allocated, st.st_size + 1))
 			{
 				send_error500(f);
 				fclose(fp);
 				return;
 			}
-
-			if((readen = fread(allocated + CSS_sz + cs_strlen(separator), 1, st.st_size, fp)) == st.st_size)
+			if((readen = fread(allocated, 1, st.st_size, fp)) == st.st_size)
 			{
-				allocated[readen + CSS_sz + cs_strlen(separator)] = '\0';
+				allocated[readen] = '\0';
 			}
-
 			fclose(fp);
 		}
 
 		if(filen == 1 && cfg.http_prepend_embedded_css)    // Prepend Embedded CSS
 		{
-			if (CSS && allocated)
+			char separator [255];
+			snprintf(separator, 255, "\n/* Beginn embedded CSS File: %s */\n", cfg.http_css);
+			char *oldallocated = allocated;
+			CSS = tpl_getUnparsedTpl("CSS", 1, "");
+			int32_t newsize = cs_strlen(CSS) + cs_strlen(separator) + 2;
+			if(oldallocated) { newsize += cs_strlen(oldallocated) + 1; }
+			if(!cs_malloc(&allocated, newsize))
 			{
-				memcpy(allocated, CSS, CSS_sz);
-				memcpy(allocated + CSS_sz, separator, cs_strlen(separator));
-				allocated[readen + CSS_sz + cs_strlen(separator)] = '\0';
+				if(oldallocated) { NULLFREE(oldallocated); }
+				NULLFREE(CSS);
+				send_error500(f);
+				return;
 			}
+			if (CSS && allocated != NULL){
+				snprintf(allocated, newsize, "%s\n%s\n%s", CSS, separator, (oldallocated != NULL ? oldallocated : ""));
+			}
+			if(oldallocated) { NULLFREE(oldallocated); }
 		}
 
 		if(allocated) { result = allocated; }
+
 	}
 	else
 	{
 		CSS = tpl_getUnparsedTpl("CSS", 1, "");
 		JSCRIPT = tpl_getUnparsedTpl("JSCRIPT", 1, "");
 		JQUERY = tpl_getUnparsedTpl("JQUERY", 1, "");
+#ifdef TOUCH
+		TOUCH_CSS = tpl_getUnparsedTpl("TOUCH_CSS", 1, "");
+		TOUCH_JSCRIPT = tpl_getUnparsedTpl("TOUCH_JSCRIPT", 1, "");
+
+		if(!subdir || strcmp(subdir, TOUCH_SUBDIR)) {
+			if( filen == 1 && cs_strlen(CSS)){ result = CSS; }
+			else if ( filen == 2 && cs_strlen(JSCRIPT)){ result = JSCRIPT; }
+			else if ( filen == 3 && cs_strlen(JQUERY)){ result = JQUERY; }
+		} else {
+			if( filen == 1 && cs_strlen(TOUCH_CSS)){ result = TOUCH_CSS; }
+			else if ( filen == 2 && cs_strlen(TOUCH_JSCRIPT)){ result = TOUCH_JSCRIPT; }
+			else if ( filen == 3 && cs_strlen(JQUERY)){ result = JQUERY; }
+		}
+#else
 		if(filen == 1 && cs_strlen(CSS) > 0){ result = CSS;}
 		else if(filen == 2 && cs_strlen(JSCRIPT) > 0){result = JSCRIPT;}
 		else if(filen == 3 && cs_strlen(JQUERY) > 0){result = JQUERY;}
+#endif
 		moddate = first_client->login;
 	}
 
@@ -531,6 +543,8 @@ void send_file(FILE *f, char *filename, char *subdir, time_t modifiedheader, uin
 	NULLFREE(CSS);
 	NULLFREE(JSCRIPT);
 	NULLFREE(JQUERY);
+	NULLFREE(TOUCH_CSS);
+	NULLFREE(TOUCH_JSCRIPT);
 }
 
 /* Parse url parameters and save them to params array. The pch pointer is increased to the position where parsing stopped. */
@@ -585,7 +599,7 @@ char *getParam(struct uriparams *params, char *name)
 /*
  * returns uptime in sec on success, -1 on error
 */
-int32_t oscam_get_uptime(void)
+int32_t ncam_get_uptime(void)
 {
 #if defined(__linux__)
 	struct sysinfo uptime;
@@ -621,14 +635,8 @@ int8_t get_stats_linux(const pid_t pid, struct pstat* result)
 	char pid_s[20];
 	snprintf(pid_s, sizeof(pid_s), "%d", pid);
 	char stat_filepath[30] = "/proc/";
-
-	if (!cs_strncat(stat_filepath, pid_s, sizeof(stat_filepath))) {
-		return -1;
-	}
-
-	if (!cs_strncat(stat_filepath, "/stat", sizeof(stat_filepath))) {
-		return -1;
-	}
+	cs_strncpy(stat_filepath + cs_strlen(stat_filepath), pid_s, sizeof(pid_s));
+	cs_strncpy(stat_filepath + cs_strlen(stat_filepath), "/stat", 6);
 
 	FILE *f_pstat = fopen(stat_filepath, "r");
 	if (f_pstat == NULL) {
@@ -1051,7 +1059,7 @@ SSL_CTX *SSL_Webif_Init(void)
 {
 	SSL_CTX *ctx;
 
-	static const char *cs_cert = "oscam.pem";
+	static const char *cs_cert = "ncam.pem";
 
 	// set locking callbacks for SSL
 	int32_t i, num = CRYPTO_num_locks();

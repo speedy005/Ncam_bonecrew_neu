@@ -11,25 +11,50 @@
 #include "module-cccam-data.h"
 #include "module-cccam-cacheex.h"
 #include "module-cccshare.h"
-#include "oscam-chk.h"
-#include "oscam-cache.h"
-#include "oscam-client.h"
-#include "oscam-ecm.h"
-#include "oscam-emm.h"
-#include "oscam-failban.h"
-#include "oscam-garbage.h"
-#include "oscam-lock.h"
-#include "oscam-net.h"
-#include "oscam-reader.h"
-#include "oscam-string.h"
-#include "oscam-time.h"
-#include "oscam-work.h"
+#include "ncam-chk.h"
+#include "ncam-cache.h"
+#include "ncam-client.h"
+#include "ncam-ecm.h"
+#include "ncam-emm.h"
+#include "ncam-failban.h"
+#include "ncam-garbage.h"
+#include "ncam-lock.h"
+#include "ncam-net.h"
+#include "ncam-reader.h"
+#include "ncam-string.h"
+#include "ncam-time.h"
+#include "ncam-work.h"
 
 // Mode names for CMD_05 command
 static const char *cmd05_mode_name[] = { "UNKNOWN", "PLAIN", "AES", "CC_CRYPT", "RC4", "LEN=0" };
 
 // Mode names for CMD_0C command
 static const char *cmd0c_mode_name[] = { "NONE", "RC6", "RC4", "CC_CRYPT", "AES", "IDEA" };
+
+const char *cc_msg_name[]={"MSG_CLI_DATA","MSG_CW_ECM","MSG_EMM_ACK","MSG_VALUE_03",
+			    "MSG_CARD_REMOVED","MSG_CMD_05","MSG_KEEPALIVE","MSG_NEW_CARD",
+			    "MSG_SRV_DATA","MSG_VALUE_09","MSG_NEW_CARD_SIDINFO","MSG_CW_NOK1",
+			    "MSG_CW_NOK2","MSG_NO_HEADER"};
+
+char * cc_get_msgname(uint32_t msg,char *result,uint32_t len){
+	if(msg <= 0x09)
+		return (char*)cc_msg_name[msg];
+	else if(msg == 0x0f)
+		return (char*)cc_msg_name[10];
+	else if(msg == 0xfe)
+		return (char*)cc_msg_name[11];
+	else if(msg == 0xff)
+		return (char*)cc_msg_name[12];
+	else if(msg == 0xffff)
+		return (char*)cc_msg_name[13];
+	else if(msg>=0x0a && msg<=0x0e){
+		snprintf(result,len,"MSG_CMD_%02x",msg);
+		return result;
+	}else{
+		snprintf(result,len,"MSG_VALUE_%02x",msg);
+		return result;
+	}
+}
 
 uint8_t cc_node_id[8];
 
@@ -125,58 +150,49 @@ void cc_xor(uint8_t *buf)
 void cc_cw_crypt(struct s_client *cl, uint8_t *cws, uint32_t cardid)
 {
 	struct cc_data *cc = cl->cc;
-	uint8_t n = 0;
-	uint8_t i;
+	uint64_t unode_id;
+	int64_t snode_id;
 	uint8_t tmp;
-	uint8_t *nod = NULL;
+	int32_t i;
 
-	if (!cs_malloc(&nod, 8))
+	if(cl->typ != 'c')
 	{
-		return;
+		unode_id = b2ll(8, cc->node_id);
 	}
-
-	for (i=0; i<8; i++)
+	else
 	{
-		if (cl->typ != 'c')
-		{
-			nod[i] = cc->node_id[7-i];
-		}
-		else
-		{
-			nod[i] = cc->peer_node_id[7-i];
-		}
+		unode_id = b2ll(8, cc->peer_node_id);
 	}
-
-	for (i=0; i<16; i++)
+	
+	if(unode_id > 0x7FFFFFFFFFFFFFFF)
 	{
-		if (i & 1)
+		for(i = 0; i < 16; i++)
 		{
-			if (i != 15)
+			tmp = cws[i] ^(unode_id >> (4 * i));
+
+			if(i & 1)
 			{
-				n = (nod[i>>1]>>4) | (nod[(i>>1)+1]<<4);
+				tmp = ~tmp;
 			}
-			else
-			{
-				n = nod[i>>1]>>4;
-			}
-		}
-		else
-		{
-			n = nod[i>>1];
-		}
 
-		n = n & 0xff;
-		tmp = cws[i] ^ n;
-
-		if (i & 1)
-		{
-			tmp = ~tmp;
+			cws[i] = (cardid >> (2 * i)) ^ tmp;
 		}
-
-		cws[i] = ((cardid >> (2 * i)) ^ tmp) & 0xff;
 	}
+	else
+	{
+		snode_id = unode_id;
+		for(i = 0; i < 16; i++)
+		{
+			tmp = cws[i] ^(snode_id >> (4 * i));
 
-	free(nod);
+			if(i & 1)
+			{
+				tmp = ~tmp;
+			}
+
+			cws[i] = (cardid >> (2 * i)) ^ tmp;
+		}
+	}
 }
 
 /** swap endianness (int) */
@@ -378,6 +394,10 @@ struct cc_srvid_block *is_sid_blocked(struct cc_card *card, struct cc_srvid *srv
 		{
 			break;
 		}
+		else if(srvid->ecmlen && ((struct cc_srvid_block *)srvid)->blocked_till > time(NULL))
+		{
+			ll_iter_remove_data(&it);
+		}
 	}
 	return srvid;
 }
@@ -412,7 +432,7 @@ struct cc_srvid *is_good_sid(struct cc_card *card, struct cc_srvid *srvid_good)
 	return srvid;
 }
 
-#define BLOCKING_SECONDS 10
+#define BLOCKING_SECONDS 6
 
 void add_sid_block(struct cc_card *card, struct cc_srvid *srvid_blocked, bool temporary)
 {
@@ -931,11 +951,11 @@ int32_t cc_cmd_send(struct s_client *cl, uint8_t *buf, int32_t len, cc_msg_type_
 	return n;
 }
 
-#define CC_DEFAULT_VERSION 9
-#define CC_VERSIONS 10
-static char *version[CC_VERSIONS]  = { "2.0.11", "2.1.1", "2.1.2", "2.1.3", "2.1.4", "2.2.0", "2.2.1", "2.3.0", "2.3.1", "2.3.2"};
-static char *build[CC_VERSIONS]    = { "2892",   "2971",  "3094",  "3165",  "3191",  "3290",  "3316",  "3367",  "9d508a",  "4000"};
-static char extcompat[CC_VERSIONS] = { 0,        0,       0,       0,       0,       1,       1,       1,       1,       1}; // Supporting new card format starting with 2.2.0
+#define CC_DEFAULT_VERSION 1
+#define CC_VERSIONS 11
+static char *version[CC_VERSIONS]  = { "2.0.9", "2.0.11", "2.1.1", "2.1.2", "2.1.3", "2.1.4", "2.2.0", "2.2.1", "2.3.0", "2.3.1", "2.3.2"};
+static char *build[CC_VERSIONS]    = { "2816",   "2892",   "2971",  "3094",  "3165",  "3191",  "3290",  "3316",  "3367",  "9d508a",  "4000"};
+static char extcompat[CC_VERSIONS] = { 0,        0,       0,       0,       0,       1,       1,       1,       1,       1,       1}; // Supporting new card format starting with 2.2.0
 
 /**
  * reader + server
@@ -1009,12 +1029,12 @@ int32_t cc_send_cli_data(struct s_client *cl)
 
 	memcpy(buf, rdr->r_usr, sizeof(rdr->r_usr));
 	memcpy(buf + 20, cc->node_id, 8);
-	buf[28] = 0; // <-- Client wants to have EMUs, 0 - NO; 1 - YES
+	buf[28] = rdr->cc_want_emu; // <-- Client wants to have EMUs, 0 - NO; 1 - YES
 	memcpy(buf + 29, rdr->cc_version, sizeof(rdr->cc_version)); // cccam version (ascii)
 	memcpy(buf + 61, rdr->cc_build, sizeof(rdr->cc_build)); // build number (ascii)
 
-	// multics seed already detected, now send multics 'WHO' for getting and confirming multics server
-	if(cc->multics_mode == 1)
+	// multics or newbox seed already detected, now send multics 'WHO' for getting and confirming multics or newbox server
+	if(cc->multics_mode == 1 || cc->newbox_mode == 1)
 	{
 		memcpy(buf + 57, "W", 1);
 		memcpy(buf + 58, "H", 1);
@@ -1324,7 +1344,7 @@ void UA_right(uint8_t *in, uint8_t *out, int32_t len)
 /**
  * cccam uses UA right justified
  **/
-void cc_UA_oscam2cccam(uint8_t *in, uint8_t *out, uint16_t caid)
+void cc_UA_ncam2cccam(uint8_t *in, uint8_t *out, uint16_t caid)
 {
 	uint8_t tmp[8];
 	memset(out, 0, 8);
@@ -1333,7 +1353,7 @@ void cc_UA_oscam2cccam(uint8_t *in, uint8_t *out, uint16_t caid)
 	//switch(caid >> 8)
 	//{
 	//	case 0x17: //IRDETO/Betacrypt:
-	//		//oscam: AA BB CC DD 00 00 00 00
+	//		//ncam: AA BB CC DD 00 00 00 00
 	//		//cccam: 00 00 00 00 DD AA BB CC
 	//		out[4] = in[3]; //Hexbase
 	//		out[5] = in[0];
@@ -1344,7 +1364,7 @@ void cc_UA_oscam2cccam(uint8_t *in, uint8_t *out, uint16_t caid)
 	//		//Place here your own adjustments!
 	//}
 
-	if(caid_is_bulcrypt(caid))
+	if(caid_is_bulcrypt(caid) || caid_is_streamguard(caid) || caid_is_tongfang(caid) || caid_is_dvn(caid))
 	{
 		out[4] = in[0];
 		out[5] = in[1];
@@ -1358,9 +1378,9 @@ void cc_UA_oscam2cccam(uint8_t *in, uint8_t *out, uint16_t caid)
 }
 
 /**
- * oscam has a special format, depends on offset or type:
+ * ncam has a special format, depends on offset or type:
  **/
-void cc_UA_cccam2oscam(uint8_t *in, uint8_t *out, uint16_t caid)
+void cc_UA_cccam2ncam(uint8_t *in, uint8_t *out, uint16_t caid)
 {
 	uint8_t tmp[8];
 	memset(out, 0, 8);
@@ -1370,7 +1390,7 @@ void cc_UA_cccam2oscam(uint8_t *in, uint8_t *out, uint16_t caid)
 	//{
 	//	case 0x17: //IRDETO/Betacrypt:
 	//		//cccam: 00 00 00 00 DD AA BB CC
-	//		//oscam: AA BB CC DD 00 00 00 00
+	//		//ncam: AA BB CC DD 00 00 00 00
 	//		out[0] = in[5];
 	//		out[1] = in[6];
 	//		out[2] = in[7];
@@ -1380,7 +1400,7 @@ void cc_UA_cccam2oscam(uint8_t *in, uint8_t *out, uint16_t caid)
 	//		//Place here your own adjustments!
 	//}
 
-	if(caid_is_bulcrypt(caid))
+	if(caid_is_bulcrypt(caid) || caid_is_streamguard(caid) || caid_is_tongfang(caid) || caid_is_dvn(caid))
 	{
 		out[0] = in[4];
 		out[1] = in[5];
@@ -1394,12 +1414,12 @@ void cc_UA_cccam2oscam(uint8_t *in, uint8_t *out, uint16_t caid)
 	newcamd_to_hexserial(tmp, out, caid);
 }
 
-void cc_SA_oscam2cccam(uint8_t *in, uint8_t *out)
+void cc_SA_ncam2cccam(uint8_t *in, uint8_t *out)
 {
 	memcpy(out, in, 4);
 }
 
-void cc_SA_cccam2oscam(uint8_t *in, uint8_t *out)
+void cc_SA_cccam2ncam(uint8_t *in, uint8_t *out)
 {
 	memcpy(out, in, 4);
 }
@@ -1433,7 +1453,7 @@ void set_au_data(struct s_client *cl, struct s_reader *rdr, struct cc_card *card
 	char tmp_dbg[17];
 	cc->last_emm_card = card;
 
-	cc_UA_cccam2oscam(card->hexserial, rdr->hexserial, rdr->caid);
+	cc_UA_cccam2ncam(card->hexserial, rdr->hexserial, rdr->caid);
 
 	cs_log_dbg(D_EMM, "%s au info: caid %04X UA: %s", getprefix(), card->caid,
 				cs_hexdump(0, rdr->hexserial, 8, tmp_dbg, sizeof(tmp_dbg)));
@@ -1451,7 +1471,7 @@ void set_au_data(struct s_client *cl, struct s_reader *rdr, struct cc_card *card
 			rdr->prid[p][1] = provider->prov >> 16;
 			rdr->prid[p][2] = provider->prov >> 8;
 			rdr->prid[p][3] = provider->prov & 0xFF;
-			cc_SA_cccam2oscam(provider->sa, rdr->sa[p]);
+			cc_SA_cccam2ncam(provider->sa, rdr->sa[p]);
 
 			cs_log_dbg(D_EMM, "%s au info: provider: %06X:%02X%02X%02X%02X", getprefix(),
 						provider->prov, provider->sa[0], provider->sa[1], provider->sa[2], provider->sa[3]);
@@ -1544,7 +1564,8 @@ struct cc_card *get_matching_card(struct s_client *cl, ECM_REQUEST *cur_er, int8
 		}
 
 		if((ncard->caid == cur_er->caid // caid matches
-			|| lb_match)) // or system matches if caid ends with 00
+			|| (rdr->cc_want_emu && (ncard->caid == (cur_er->caid & 0xFF00))))
+			|| lb_match) // or system matches if caid ends with 00 (needed for wantemu)
 		{
 			int32_t goodSidCount = ll_count(ncard->goodsids);
 			int32_t badSidCount = ll_count(ncard->badsids);
@@ -1583,7 +1604,7 @@ struct cc_card *get_matching_card(struct s_client *cl, ECM_REQUEST *cur_er, int8
 				}
 			}
 
-			if(caid_is_nagra(ncard->caid) && (!xcard || ncard->hop < xcard->hop))
+			if(!(rdr->cc_want_emu) && caid_is_nagra(ncard->caid) && (!xcard || ncard->hop < xcard->hop))
 			{
 				xcard = ncard; // remember card (D+ / 1810 fix) if request has no provider, but card has
 			}
@@ -1615,7 +1636,7 @@ struct cc_card *get_matching_card(struct s_client *cl, ECM_REQUEST *cur_er, int8
 
 				while((provider = ll_iter_next(&it2)))
 				{
-					if(!cur_er->prid || (provider->prov == cur_er->prid)) // provid matches
+					if(!cur_er->prid || !provider->prov || (provider->prov == cur_er->prid)) // provid matches
 					{
 						if(rating > best_rating)
 						{
@@ -1915,6 +1936,7 @@ int32_t cc_send_ecm(struct s_client *cl, ECM_REQUEST *er)
 
 			rdr->currenthops = card->hop;
 			rdr->card_status = CARD_INSERTED;
+			if(rdr->from_cccam_cfg && cfg.cccam_cfg_reconnect_attempts > 0) { rdr->reconnect_attempts = 0; }
 
 			cs_log_dbg( D_READER, "%s sending ecm for sid %04X(%d) to card %08x, hop %d, ecmtask %d",
 						getprefix(), cur_er->srvid, cur_er->ecmlen, card->id, card->hop, cur_er->idx);
@@ -2120,9 +2142,9 @@ int32_t cc_send_emm(EMM_PACKET *ep)
 		uint8_t hs[8];
 		char tmp_dbg[17];
 
-		cc_UA_oscam2cccam(ep->hexserial, hs, caid);
+		cc_UA_ncam2cccam(ep->hexserial, hs, caid);
 
-		cs_log_dbg(D_EMM, "%s au info: searching card for caid %04X oscam-UA: %s",
+		cs_log_dbg(D_EMM, "%s au info: searching card for caid %04X ncam-UA: %s",
 					getprefix(), b2i(2, ep->caid), cs_hexdump(0, ep->hexserial, 8, tmp_dbg, sizeof(tmp_dbg)));
 
 		cs_log_dbg(D_EMM, "%s au info: searching card for caid %04X cccam-UA: %s",
@@ -2668,35 +2690,22 @@ void move_card_to_end(struct s_client *cl, struct cc_card *card_to_move)
 	}
 }*/
 
-void addParam(char *param, size_t param_sz, char *value)
+static void addParam(char *param, char *value)
 {
-	if (!param_sz) {
-		cs_log("ERROR! Sizeof param is zero!");
-		return;
+	if(cs_strlen(param) < 4)
+	{
+		cs_strncpy(param + cs_strlen(param), value, 4);
 	}
-
-	if (param && value) {
-		if ((cs_strlen(param) + cs_strlen(value) + 1) < param_sz) {
-			if (cs_strlen(param) < 4) {
-				cs_strncat(param, value, param_sz);
-			}
-			else {
-				cs_strncat(param, ",", param_sz);
-				cs_strncat(param, value, param_sz);
-			}
-		}
-		else {
-			cs_log("ERROR! Buffer overflow in addParam!");
-		}
-	}
-	else {
-	cs_log("ERROR! Booth param and value pointer NULL!");
+	else
+	{
+		cs_strncpy(param + cs_strlen(param), ",", 2);
+		cs_strncpy(param + cs_strlen(param), value, 4);
 	}
 }
 
-static void chk_peer_node_for_oscam(struct cc_data *cc)
+static void chk_peer_node_for_ncam(struct cc_data *cc)
 {
-	if(!cc->is_oscam_cccam) // Allready discovered oscam-cccam
+	if(!cc->is_ncam_cccam) // Allready discovered ncam-cccam
 	{
 		uint16_t sum = 0x1234;
 		uint16_t recv_sum = (cc->peer_node_id[6] << 8) | cc->peer_node_id[7];
@@ -2707,8 +2716,8 @@ static void chk_peer_node_for_oscam(struct cc_data *cc)
 			sum += cc->peer_node_id[i];
 		}
 
-		// Create special data to detect oscam-cccam
-		cc->is_oscam_cccam = sum == recv_sum;
+		// Create special data to detect ncam-cccam
+		cc->is_ncam_cccam = sum == recv_sum;
 	}
 }
 
@@ -2748,8 +2757,8 @@ int32_t cc_parse_msg(struct s_client *cl, uint8_t *buf, int32_t l)
 		return -1;
 	}
 
-	cs_log_dbg(cl->typ == 'c' ? D_CLIENT : D_READER, "%s parse_msg=%d", getprefix(), buf[1]);
-
+	char msgname[250];
+	cs_log_dbg(cl->typ == 'c' ? D_CLIENT : D_READER, "%s parse_msg=%s", getprefix(), cc_get_msgname(buf[1],msgname,sizeof(msgname)));
 	uint8_t *data = buf + 4;
 
 	if(l < 4)
@@ -2777,7 +2786,6 @@ int32_t cc_parse_msg(struct s_client *cl, uint8_t *buf, int32_t l)
 			if(l == 0x48) // 72 bytes: normal server data
 			{
 				cs_writelock(__func__, &cc->cards_busy);
-
 				cc_free_cardlist(cc->cards, 0);
 				free_extended_ecm_idx(cc);
 				cc->last_emm_card = NULL;
@@ -2802,28 +2810,43 @@ int32_t cc_parse_msg(struct s_client *cl, uint8_t *buf, int32_t l)
 				// multics server response
 				if(data[33] == 'M' && data[34] == 'C' && data[35] == 'S')
 				{
-					cc->multics_mode = 2; // multics server finaly confirmed.
-					cc->multics_version[0] = data[37];
-					cc->multics_version[1] = data[38];
-					cs_log_dbg(D_READER, "multics detected: %s!", getprefix());
+					if (data[31] == 'H' && data[32] == 'B')
+					{
+						cc->multics_mode = 3;
+						memcpy(cc->multics_version, data+29, 2);
+						cs_log_dbg(D_READER, "multics hellboy detected: %s!", getprefix());
+					}
+					else
+					{
+						cc->multics_mode = 2;
+						memcpy(cc->multics_version, data+37, 2);
+						cs_log_dbg(D_READER, "multics detected: %s!", getprefix());
+					}
+				}
+				//newbox server response
+				else if(data[33] == 'N' && data[34] == 'B' && data[35] == 'x')
+				{
+					cc->newbox_mode = 2; //newbox server finaly confirmed.
+					cc->newbox_version[0] = data[37];
+					cc->newbox_version[1] = data[38];
+					cs_log_dbg(D_READER, "newbox detected: %s!", getprefix());
 				}
 
 				cs_writeunlock(__func__, &cc->cards_busy);
-
 				cs_log_dbg(D_READER, "%s remote server %s running v%s (%s)", getprefix(), cs_hexdump(0,
 							cc->peer_node_id, 8, tmp_dbg, sizeof(tmp_dbg)), cc->remote_version, cc->remote_build);
 
-				chk_peer_node_for_oscam(cc);
-				// Trick: when discovered partner is an Oscam Client, then we send him our version string:
-				if(cc->is_oscam_cccam)
+				chk_peer_node_for_ncam(cc);
+				// Trick: when discovered partner is an NCam Client, then we send him our version string:
+				if(cc->is_ncam_cccam)
 				{
 					uint8_t token[256];
 #ifdef CS_CACHEEX_AIO
-					snprintf((char *)token, sizeof(token), "PARTNER: OSCam %s (%s) [EXT,SID,SLP,LGF]",
+					snprintf((char *)token, sizeof(token), "PARTNER: NCam %s, build %s (%s) [EXT,SID,SLP,LGF]",
 #else
-					snprintf((char *)token, sizeof(token), "PARTNER: OSCam %s (%s) [EXT,SID,SLP]",
+					snprintf((char *)token, sizeof(token), "PARTNER: NCam %s, build %s (%s) [EXT,SID,SLP]",
 #endif
-								CS_VERSION, CS_TARGET);
+								CS_VERSION, CS_REVISION, CS_TARGET);
 
 					cc_cmd_send(cl, token, cs_strlen((char *)token) + 1, MSG_CW_NOK1);
 				}
@@ -2885,8 +2908,8 @@ int32_t cc_parse_msg(struct s_client *cl, uint8_t *buf, int32_t l)
 			{
 				cs_writelock(__func__, &cc->cards_busy);
 				cc->cmd05_mode = MODE_UNKNOWN;
-				cs_writeunlock(__func__, &cc->cards_busy);
 				cc_cycle_connection(cl);
+				cs_writeunlock(__func__, &cc->cards_busy);
 				//
 				// 44 bytes: set aes128 key, Key=16 bytes [Offset=len(password)]
 				//
@@ -3117,14 +3140,14 @@ int32_t cc_parse_msg(struct s_client *cl, uint8_t *buf, int32_t l)
 				// Check for PARTNER connection
 				if((l >= (4 + 8)) && strncmp(msg, "PARTNER:", 8) == 0)
 				{
-					// When Data starts with "PARTNER:" we have an Oscam-cccam-compatible client/server!
+					// When Data starts with "PARTNER:" we have an NCam-cccam-compatible client/server!
 
-					cs_strncpy(cc->remote_oscam, msg + 9, sizeof(cc->remote_oscam));
+					cs_strncpy(cc->remote_ncam, msg + 9, sizeof(cc->remote_ncam));
 					int32_t has_param = check_extended_mode(cl, msg);
 
-					if(!cc->is_oscam_cccam)
+					if(!cc->is_ncam_cccam)
 					{
-						cc->is_oscam_cccam = 1;
+						cc->is_ncam_cccam = 1;
 
 						// send params back. At the moment there is only "EXT"
 						char param[20];
@@ -3138,33 +3161,30 @@ int32_t cc_parse_msg(struct s_client *cl, uint8_t *buf, int32_t l)
 
 							if(cc->extended_mode)
 							{
-								addParam(param, sizeof(param), "EXT");
+								addParam(param, "EXT");
 							}
 
 							if(cc->cccam220)
 							{
-								addParam(param, sizeof(param), "SID");
+								addParam(param, "SID");
 							}
 
 							if(cc->sleepsend)
 							{
-								addParam(param, sizeof(param), "SLP");
+								addParam(param, "SLP");
 							}
-
 #ifdef CS_CACHEEX_AIO
 							if(cc->extended_lg_flagged_cws)
 							{
-								addParam(param, sizeof(param), "LGF");
+								addParam(param, "LGF");
 							}
 #endif
-							if (!cs_strncat(param, "]", sizeof(param))) {
-								cs_log("BUG!!, Adding ']' didn't succed!");
-							}
+							cs_strncpy(param + cs_strlen(param), "]", 2);
 						}
 
 						uint8_t token[256];
-						snprintf((char *)token, sizeof(token), "PARTNER: OSCam %s (%s)%s",
-								CS_VERSION, CS_TARGET, param);
+						snprintf((char *)token, sizeof(token), "PARTNER: NCam %s, build %s (%s)%s",
+								CS_VERSION, CS_REVISION, CS_TARGET, param);
 
 						cc_cmd_send(cl, token, cs_strlen((char *)token) + 1, MSG_CW_NOK1);
 					}
@@ -3248,7 +3268,7 @@ int32_t cc_parse_msg(struct s_client *cl, uint8_t *buf, int32_t l)
 					else if(cc->cmd05NOK) // else MSG_CW_NOK2: can't decode
 					{
 						move_card_to_end(cl, card);
-						if(cwlastresptime < 5000)
+						if(cwlastresptime < 5000 && cfg.cc_autosidblock)
 						{
 							add_sid_block(card, &srvid, true);
 						}
@@ -3779,7 +3799,7 @@ int32_t cc_parse_msg(struct s_client *cl, uint8_t *buf, int32_t l)
 			}
 			else // reader
 			{
-				// by Project: Keynation + Oscam team
+				// by Project: Keynation + NCam team
 				cc_crypt_cmd0c(cl, data, len);
 
 				uint8_t CMD_0x0C_Command = data[0];
@@ -3987,7 +4007,7 @@ int32_t cc_recv_chk(struct s_client *cl, uint8_t *dcw, int32_t *rc, uint8_t *buf
 	else if((buf[1] == (MSG_CW_NOK1)) || (buf[1] == (MSG_CW_NOK2)))
 	{
 		*rc = 0;
-		//if(cc->is_oscam_cccam)
+		//if(cc->is_ncam_cccam)
 		if(cfg.cc_forward_origin_card)
 		{
 			return (cc->recv_ecmtask);
@@ -4003,7 +4023,7 @@ int32_t cc_recv_chk(struct s_client *cl, uint8_t *dcw, int32_t *rc, uint8_t *buf
 
 //int32_t is_softfail(int32_t rc)
 //{
-//	//see oscam.c send_dcw() for a full list
+//	//see ncam.c send_dcw() for a full list
 //	switch(rc)
 //	{
 //		case 5: // 5 = timeout
@@ -4498,7 +4518,7 @@ int32_t cc_srv_connect(struct s_client *cl)
 	}
 
 	memcpy(cc->peer_node_id, buf + 24, 8);
-	//chk_peer_node_for_oscam(cc);
+	//chk_peer_node_for_ncam(cc);
 
 	ccversion_pos = 33;
 	while(ccversion_pos + 1 < i && ccversion_pos < 33 + 5 && buf[ccversion_pos] == 0)
@@ -4659,6 +4679,7 @@ int32_t cc_cli_connect(struct s_client *cl)
 	if(handle <= 0)
 	{
 		cs_log_dbg(D_READER, "%s network connect error!", rdr->label);
+		if(rdr->from_cccam_cfg && cfg.cccam_cfg_reconnect_attempts > 0) { block_connect(rdr); }
 		return -1;
 	}
 
@@ -4724,18 +4745,28 @@ int32_t cc_cli_connect(struct s_client *cl)
 		sum += data[i];
 	}
 
-	// create special data to detect oscam-cccam
-	cc->is_oscam_cccam = sum == recv_sum;
+	// create special data to detect ncam-cccam
+	cc->is_ncam_cccam = sum == recv_sum;
 
 	// detect multics seed
 	uint8_t a = (data[0] ^ 'M') + data[1] + data[2];
 	uint8_t b = data[4] + (data[5] ^ 'C') + data[6];
 	uint8_t c = data[8] + data[9] + (data[10] ^ 'S');
 
+	// detect newbox seed
+	uint8_t d = (data[0] ^ 'N') + data[1] + data[2];
+	uint8_t e = data[4] + (data[5] ^ 'B') + data[6];
+	uint8_t f = data[8] + data[9] + (data[10]^'x');
+
 	if((a == data[3]) && (b == data[7]) && (c == data[11]))
 	{
 		cc->multics_mode = 1; // detected multics seed
 		cs_log_dbg(D_READER, "multics seed detected: %s", rdr->label);
+	}
+	else if((d == data[3]) && (e == data[7]) && (f == data[11]))
+	{
+		cc->newbox_mode = 1; //detected newbox seed.
+		cs_log_dbg(D_READER, "newbox seed detected: %s", rdr->label);
 	}
 
 	cc_xor(data); // XOR init bytes with 'CCcam'
@@ -5018,7 +5049,7 @@ void cc_update_nodeid(void)
 	}
 
 	// Partner ID
-	cc_node_id[4] = 0x10; // (Oscam 0x10, vPlugServer 0x11, Hadu 0x12, ...)
+	cc_node_id[4] = 0x10; // (NCam 0x10, vPlugServer 0x11, Hadu 0x12, ...)
 	sum += cc_node_id[4];
 
 	// generate checksum for Partner ID:
@@ -5090,7 +5121,12 @@ bool cccam_client_extended_mode(struct s_client *cl)
 
 bool cccam_client_multics_mode(struct s_client *cl)
 {
-	return cl && cl->cc && ((struct cc_data *)cl->cc)->multics_mode == 2;
+	return cl && cl->cc && ((struct cc_data *)cl->cc)->multics_mode > 0;
+}
+
+bool cccam_client_newbox_mode(struct s_client *cl)
+{
+	return cl && cl->cc && ((struct cc_data *)cl->cc)->newbox_mode == 2;
 }
 
 void module_cccam(struct s_module *ph)

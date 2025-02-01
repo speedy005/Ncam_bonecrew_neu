@@ -9,19 +9,19 @@
 #include "module-gbox-cards.h"
 #include "module-cccam.h"
 #include "module-cccam-data.h"
-#include "oscam-failban.h"
-#include "oscam-client.h"
-#include "oscam-ecm.h"
-#include "oscam-lock.h"
-#include "oscam-net.h"
-#include "oscam-chk.h"
-#include "oscam-string.h"
-#include "oscam-time.h"
-#include "oscam-reader.h"
-#include "oscam-files.h"
+#include "ncam-failban.h"
+#include "ncam-client.h"
+#include "ncam-ecm.h"
+#include "ncam-lock.h"
+#include "ncam-net.h"
+#include "ncam-chk.h"
+#include "ncam-string.h"
+#include "ncam-time.h"
+#include "ncam-reader.h"
+#include "ncam-files.h"
 #include "module-gbox-remm.h"
 #include "module-dvbapi.h"
-#include "oscam-work.h"
+#include "ncam-work.h"
 
 static struct gbox_data local_gbox;
 static int8_t local_gbox_initialized = 0;
@@ -335,7 +335,7 @@ static int8_t gbox_clear_peer(struct gbox_peer *peer)
 	peer->ecm_idx = 0;
 	peer->next_hello = 0;
 	peer->authstat = 0;
-	peer->crd_crc_change = 1;
+
 	gbox_delete_cards(GBOX_DELETE_FROM_PEER, peer->gbox.id);
 	gbox_peer_online(peer, GBOX_PEER_OFFLINE);
 
@@ -1603,7 +1603,7 @@ uint8_t add_betatunnel_card(uint16_t caid, uint8_t slot)
 
 		for(i = 0; i < ttab->ttnum; i++)
 		{
-			// Check for Betatunnel on gbox account in oscam.user
+			// Check for Betatunnel on gbox account in ncam.user
 			if(cli->gbox && ttab->ttdata && caid == ttab->ttdata[i].bt_caidto)
 			{
 				gbox_add_card(local_gbox.id, gbox_get_caprovid(ttab->ttdata[i].bt_caidfrom, i), slot, DEFAULT_GBOX_RESHARE, 0, GBOX_CARD_TYPE_BETUN, NULL);
@@ -1843,7 +1843,7 @@ static int8_t gbox_check_header_recvd(struct s_client *cli, struct s_client *pro
 			if (!validate_peerpass(peer_received_pw))
 			{
 				handle_attack(cli, GBOX_ATTACK_PEER_PW, peer_recvd_id);
-				cs_log("peer: %04X - peerpass: %08X unknown -> enable reader and check oscam.server->[reader]->password",
+				cs_log("peer: %04X - peerpass: %08X unknown -> enable reader and check ncam.server->[reader]->password",
 					peer_recvd_id, peer_received_pw);
 
 				return -1;
@@ -2079,7 +2079,7 @@ static void gbox_send_dcw(struct s_client *cl, ECM_REQUEST *er)
 	cs_log("sending dcw to peer : %04x data: %s", er->gbox_ecm_src_peer, cs_hexdump(0, buf, er->gbox_ecm_dist + 44, tmp, sizeof(tmp)));
 	*/
 
-	if(ere->gbox_rev >> 4)
+	if(ere->gbox_rev >> 4)	
 		{ gbox_send_remm_req(cli, er); }
 
 	cs_log_dbg(D_READER,"<- CW (<-%d) caid; %04X from cw-source-peer: %04X forward to ecm-requesting-peer: %04X - forwarding peer: %04X %s rev:%01X.%01X port:%d",
@@ -2129,7 +2129,7 @@ static int32_t gbox_send_ecm(struct s_client *cli, ECM_REQUEST *er)
 
 	uint8_t send_buf[1024];
 	int32_t buflen, len1;
-
+	
 	len1 = er->ecmlen + 18; // length till end of ECM
 
 	er->gbox_crc = gbox_get_checksum(&er->ecm[0], er->ecmlen);
@@ -2256,20 +2256,20 @@ static int8_t init_local_gbox(void)
 
 	if(!cfg.gbox_port[0])
 	{
-		cs_log("error, no/invalid port=%d configured in oscam.conf!", cfg.gbox_port[0] ? cfg.gbox_port[0] : 0);
+		cs_log("error, no/invalid port=%d configured in ncam.conf!", cfg.gbox_port[0] ? cfg.gbox_port[0] : 0);
 		return -1;
 	}
 
 	if(!cfg.gbox_hostname || cs_strlen(cfg.gbox_hostname) > 128)
 	{
-		cs_log("error, no/invalid hostname '%s' configured in oscam.conf!",
+		cs_log("error, no/invalid hostname '%s' configured in ncam.conf!",
 			cfg.gbox_hostname ? cfg.gbox_hostname : "");
 		return -1;
 	}
 
 	if(!cfg.gbox_password)
 	{
-		cs_log("error, 'my_password' not configured in oscam.conf!");
+		cs_log("error, 'my_password' not configured in ncam.conf!");
 		return -1;
 	}
 

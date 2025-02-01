@@ -11,13 +11,12 @@
  */
 
 #include "module-cccam.h"
-#include "oscam-client.h"
-#include "oscam-files.h"
-#include "oscam-string.h"
-#include "oscam-time.h"
+#include "ncam-client.h"
+#include "ncam-files.h"
+#include "ncam-string.h"
+#include "ncam-time.h"
 
 static int8_t running;
-int32_t seconds, secs, fullmins, mins, hours, days, fullhours;
 
 static void refresh_lcd_file(void)
 {
@@ -29,24 +28,19 @@ static void refresh_lcd_file(void)
 
 	if(cfg.lcd_output_path == NULL)
 	{
-		get_tmp_dir_filename(targetfile, sizeof(targetfile), "oscam.lcd");
-		get_tmp_dir_filename(temp_file, sizeof(temp_file), "oscam.lcd.tmp");
+		get_tmp_dir_filename(targetfile, sizeof(targetfile), "ncam.lcd");
+		get_tmp_dir_filename(temp_file, sizeof(temp_file), "ncam.lcd.tmp");
 	}
 	else
 	{
-		snprintf(targetfile, sizeof(targetfile), "%s%s", cfg.lcd_output_path, "/oscam.lcd");
-		snprintf(temp_file, sizeof(temp_file), "%s%s.tmp", cfg.lcd_output_path, "/oscam.lcd");
+		snprintf(targetfile, sizeof(targetfile), "%s%s", cfg.lcd_output_path, "/ncam.lcd");
+		snprintf(temp_file, sizeof(temp_file), "%s%s.tmp", cfg.lcd_output_path, "/ncam.lcd");
 	}
 
 	int8_t iscccam = 0;
-	fullhours = 0;
-	fullmins = 0;
-	seconds = 0;
-	hours = 0;
-	mins = 0;
-	secs = 0;
-	days = 0;
+	int32_t seconds = 0, secs = 0, fullmins = 0, mins = 0, fullhours = 0, hours = 0,    days = 0;
 	time_t now;
+
 
 	while(running)
 	{
@@ -64,10 +58,7 @@ static void refresh_lcd_file(void)
 			char *status;
 
 			// Statuslines start
-			secs = 0;
-			fullmins = 0;
 			mins = 0;
-			fullhours = 0;
 			hours = 0;
 			days = 0;
 
@@ -86,6 +77,7 @@ static void refresh_lcd_file(void)
 			}
 
 			fprintf(fpsave, "Version: %s\n", CS_VERSION);
+			fprintf(fpsave, "Revision: %s\n", CS_REVISION);
 			if(days == 0)
 				{ fprintf(fpsave, "up: %02d:%02d:%02d\n", hours, mins, secs); }
 			else
@@ -109,10 +101,7 @@ static void refresh_lcd_file(void)
 					type = "";
 					label = "";
 					status = "OFF";
-					secs = 0;
-					fullmins = 0;
 					mins = 0;
-					fullhours = 0;
 					hours = 0;
 					days = 0;
 
@@ -245,7 +234,7 @@ static void refresh_lcd_file(void)
 		cs_sleepms(cfg.lcd_write_intervall * 1000);
 
 		if(rename(temp_file, targetfile) < 0)
-			{ cs_log("An error occured while writing oscam.lcd file %s.", targetfile); }
+			{ cs_log("An error occured while writing ncam.lcd file %s.", targetfile); }
 
 	}
 

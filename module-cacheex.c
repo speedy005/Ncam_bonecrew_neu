@@ -7,22 +7,22 @@
 #include "cscrypt/md5.h"
 #include "module-cacheex.h"
 #include "module-cw-cycle-check.h"
-#include "oscam-cache.h"
-#include "oscam-chk.h"
-#include "oscam-client.h"
-#include "oscam-conf.h"
-#include "oscam-ecm.h"
-#include "oscam-hashtable.h"
-#include "oscam-lock.h"
-#include "oscam-net.h"
-#include "oscam-string.h"
-#include "oscam-time.h"
-#include "oscam-work.h"
+#include "ncam-cache.h"
+#include "ncam-chk.h"
+#include "ncam-client.h"
+#include "ncam-conf.h"
+#include "ncam-ecm.h"
+#include "ncam-hashtable.h"
+#include "ncam-lock.h"
+#include "ncam-net.h"
+#include "ncam-string.h"
+#include "ncam-time.h"
+#include "ncam-work.h"
 #ifdef CS_CACHEEX_AIO
-#include "oscam-array.h"
+#include "ncam-array.h"
 #endif
 
-#define cs_cacheex_matcher "oscam.cacheex"
+#define cs_cacheex_matcher "ncam.cacheex"
 
 extern uint8_t cc_node_id[8];
 extern uint8_t camd35_node_id[8];
@@ -515,7 +515,6 @@ int8_t cacheex_maxhop_lg(struct s_client *cl)
 		{
 			cl->reader->cacheex.maxhop_lg = max;
 		}
-
 		if(cl->reader->cacheex.maxhop_lg < maxhop)
 		{
 			maxhop_lg = maxhop;
@@ -597,22 +596,22 @@ static uint8_t chk_cwcheck(ECM_REQUEST *er, uint8_t cw_check_for_push)
  * cacheex modes:
  *
  * cacheex=1 CACHE PULL:
- * Situation: oscam A reader1 has cacheex=1, oscam B account1 has cacheex=1
- *   oscam A gets a ECM request, reader1 send this request to oscam B, oscam B checks his cache
+ * Situation: ncam A reader1 has cacheex=1, ncam B account1 has cacheex=1
+ *   ncam A gets a ECM request, reader1 send this request to ncam B, ncam B checks his cache
  *   a. not found in cache: return NOK
  *   a. found in cache: return OK+CW
  *   b. not found in cache, but found pending request: wait max cacheexwaittime and check again
- *   oscam B never requests new ECMs
+ *   ncam B never requests new ECMs
  *
  *   CW-flow: B->A
  *
  * cacheex=2 CACHE PUSH:
- * Situation: oscam A reader1 has cacheex=2, oscam B account1 has cacheex=2
- *   if oscam B gets a CW, its pushed to oscam A
+ * Situation: ncam A reader1 has cacheex=2, ncam B account1 has cacheex=2
+ *   if ncam B gets a CW, its pushed to ncam A
  *   reader has normal functionality and can request ECMs
  *
- *   Problem: oscam B can only push if oscam A is connected
- *   Problem or feature?: oscam A reader can request ecms from oscam B
+ *   Problem: ncam B can only push if ncam A is connected
+ *   Problem or feature?: ncam A reader can request ecms from ncam B
  *
  *   CW-flow: B->A
  *
@@ -921,7 +920,9 @@ static int32_t cacheex_add_to_cache_int(struct s_client *cl, ECM_REQUEST *er, in
 	}
 #endif
 
-	if(chk_is_null_CW(er->cw))
+	// Skip check for BISS1 - cw could be indeed zero
+	// Skip check for BISS2 - we use the extended cw, so the "simple" cw is always zero
+	if(chk_is_null_CW(er->cw) && !caid_is_biss(er->caid))
 	{
 		cs_log_dump_dbg(D_CACHEEX, er->cw, 16, "push received null cw from %s", csp ? "csp" : username(cl));
 		cl->cwcacheexerr++;
@@ -930,7 +931,9 @@ static int32_t cacheex_add_to_cache_int(struct s_client *cl, ECM_REQUEST *er, in
 		return 0;
 	}
 
-	if(get_odd_even(er) == 0)
+	// Don't check for BISS1 and BISS2 mode 1/E or fake caid (ECM is fake for them)
+	// Don't check for BISS2 mode CA (ECM table is always 0x80)
+	if(!caid_is_biss(er->caid) && !caid_is_fake(er->caid) && get_odd_even(er) == 0)
 	{
 		cs_log_dbg(D_CACHEEX, "push received ecm with null odd/even byte from %s", csp ? "csp" : username(cl));
 		cl->cwcacheexerr++;
@@ -1427,7 +1430,7 @@ void cacheex_timeout(ECM_REQUEST *er)
 #ifdef CS_CACHEEX_AIO
 char* cxaio_ftab_to_buf(FTAB *lg_only_ftab)
 {
-	int32_t i, k, l = 0, strncat_sz = 0;
+	int32_t i, k, l = 0;
 	char *ret;
 	char caid[5];
 	char provid[7];
@@ -1446,43 +1449,32 @@ char* cxaio_ftab_to_buf(FTAB *lg_only_ftab)
 		}
 	}
 
-	if(!cs_malloc(&ret, l * sizeof(char) + sizeof(char))) {
+	if(!cs_malloc(&ret, l * sizeof(char) + sizeof(char)))
+	{
 		return "";
-		}
-
-	strncat_sz += l * sizeof(char) + sizeof(char);
+	}
 
 	for(i = 0; i < lg_only_ftab->nfilts; i++)
 	{
 		snprintf(caid, 5, "%04X", lg_only_ftab->filts[i].caid);
-		if (!cs_strncat(ret, caid, strncat_sz)) {
-			cs_log("FIXME!");
-		}
+		cs_strncpy(ret + cs_strlen(ret), caid, sizeof(caid));
 
 		if(!lg_only_ftab->filts[i].nprids)
 		{
-			if (!cs_strncat(ret, "01", strncat_sz)) {
-				cs_log("FIXME2!");
-			}
+			cs_strncpy(ret + cs_strlen(ret), "01", 3);
 			snprintf(provid, 7, "000000");
-			if (!cs_strncat(ret, provid, strncat_sz)) {
-				cs_log("FIXME3!");
-			}
+			cs_strncpy(ret + cs_strlen(ret), provid, sizeof(provid));
 		}
 		else
 		{
 			snprintf(nprids, 3, "%02X", lg_only_ftab->filts[i].nprids);
-			if (!cs_strncat(ret, nprids, strncat_sz)) {
-				cs_log("FIXME4!");
-			}
+			cs_strncpy(ret + cs_strlen(ret), nprids, sizeof(nprids));
 		}
 
 		for(k = 0; k < lg_only_ftab->filts[i].nprids; k++)
 		{
 			snprintf(provid, 7, "%06X", lg_only_ftab->filts[i].prids[k]);
-			if (!cs_strncat(ret, provid, strncat_sz)) {
-				cs_log("FIXME5!");
-			}
+			cs_strncpy(ret + cs_strlen(ret), provid, sizeof(provid));
 		}
 	}
 	return ret;

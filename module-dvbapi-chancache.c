@@ -4,9 +4,9 @@
 
 #ifdef HAVE_DVBAPI
 
-#include "oscam-config.h"
-#include "oscam-ecm.h"
-#include "oscam-string.h"
+#include "ncam-config.h"
+#include "ncam-ecm.h"
+#include "ncam-string.h"
 #include "module-dvbapi.h"
 #include "module-dvbapi-chancache.h"
 
@@ -23,7 +23,7 @@ void dvbapi_save_channel_cache(void)
 
 	char fname[256];
 	int32_t result = 0;
-	get_config_filename(fname, sizeof(fname), "oscam.ccache");
+	get_config_filename(fname, sizeof(fname), "ncam.ccache");
 	FILE *file = fopen(fname, "w");
 
 	if(!file)
@@ -69,7 +69,7 @@ void dvbapi_load_channel_cache(void)
 	FILE *file;
 	struct s_channel_cache *c;
 
-	get_config_filename(fname, sizeof(fname), "oscam.ccache");
+	get_config_filename(fname, sizeof(fname), "ncam.ccache");
 	file = fopen(fname, "r");
 	if(!file)
 	{

@@ -2,7 +2,7 @@
 #ifdef READER_VIDEOGUARD
 #include "cscrypt/md5.h"
 #include "cscrypt/des.h"
-#include "oscam-work.h"
+#include "ncam-work.h"
 #include "reader-common.h"
 #include "reader-videoguard-common.h"
 
@@ -296,14 +296,7 @@ static void vg2_read_tiers(struct s_reader *reader)
 						start_t = mktime(&timeinfo);
 					}
 
-					if(reader->caid == 0x098E || reader->caid == 0x09C7 || reader->caid == 0x09EF)
-					{
-						rev_date_calc_tm(&cta_res[34], &timeinfo, csystem_data->card_baseyear + 16);
-					}
-					else
-					{
-						rev_date_calc_tm(&cta_res[34], &timeinfo, csystem_data->card_baseyear);
-					}
+					rev_date_calc_tm(&cta_res[34], &timeinfo, csystem_data->card_baseyear);
 					end_t = mktime(&timeinfo);
 
 					for(word = 0; word < 32; word += 2)
@@ -431,14 +424,7 @@ static void vg2_read_tiers(struct s_reader *reader)
 				// add entitlements to list
 				struct tm timeinfo;
 				memset(&timeinfo, 0, sizeof(struct tm));
-				if(reader->caid == 0x098E || reader->caid == 0x09C7 || reader->caid == 0x09EF)
-				{
-					rev_date_calc_tm(&cta_res[4], &timeinfo, csystem_data->card_baseyear + 16);
-				}
-				else
-				{
-					rev_date_calc_tm(&cta_res[4], &timeinfo, csystem_data->card_baseyear);
-				}
+				rev_date_calc_tm(&cta_res[4], &timeinfo, csystem_data->card_baseyear);
 				cs_add_entitlement(reader, reader->caid, b2ll(4, reader->prid[0]), tier_id, 0, 0, mktime(&timeinfo), 4, 1);
 
 				if(!stopemptytier)
@@ -1589,10 +1575,12 @@ static int32_t videoguard2_do_emm(struct s_reader *reader, EMM_PACKET *ep)
 	return videoguard_do_emm(reader, ep, 0xD1, vg2_read_tiers, do_cmd);
 }
 
+#ifdef WITH_SENDCMD
 static int32_t videoguard2_do_rawcmd(struct s_reader *reader, CMD_PACKET *cp)
 {
 	return videoguard_do_rawcmd(reader, cp);
 }
+#endif
 
 static int32_t videoguard2_card_info(struct s_reader *reader)
 {
@@ -1622,7 +1610,9 @@ const struct s_cardsystem reader_videoguard2 =
 	.desc           = "videoguard2",
 	.caids          = (uint16_t[]){ 0x09, 0 },
 	.do_emm         = videoguard2_do_emm,
+#ifdef WITH_SENDCMD
 	.do_rawcmd      = videoguard2_do_rawcmd,
+#endif
 	.do_ecm         = videoguard2_do_ecm,
 	.card_info      = videoguard2_card_info,
 	.card_init      = videoguard2_card_init,

@@ -1,5 +1,5 @@
 /*
- * Griffin card reader for OSCAM
+ * Griffin card reader for NCAM
  * Copyright (C) 2013 Unix Solutions Ltd.
  *
  * Author(s): Georgi Chorbadzhiyski (gf@unixsol.org)

@@ -10,7 +10,7 @@
 
 #include "module-dvbapi.h"
 #include "module-dvbapi-coolapi.h"
-#include "oscam-string.h"
+#include "ncam-string.h"
 
 #define MAX_COOL_DMX 4
 

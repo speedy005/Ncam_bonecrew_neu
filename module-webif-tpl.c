@@ -5,8 +5,8 @@
 #ifdef WEBIF
 #include "webif/pages.h"
 #include "module-webif-tpl.h"
-#include "oscam-files.h"
-#include "oscam-string.h"
+#include "ncam-files.h"
+#include "ncam-string.h"
 #ifdef COMPRESSED_TEMPLATES
 #include "minilzo/minilzo.h"
 #endif
@@ -32,7 +32,7 @@ static int tpls_count;
 
 static void tpl_init_base64(struct tpl *tpl)
 {
-	// The rest of OSCam expects images to be base64 encoded and contain mime type.
+	// The rest of NCam expects images to be base64 encoded and contain mime type.
 	if(!template_is_image(tpl->tpl_type))
 		{ return; }
 	size_t b64_buf_len = 32 + BASE64_LENGTH(tpl->tpl_data_len); // Enough for base64 and 32 for header (data:XXX;base64,)
@@ -358,6 +358,9 @@ char *tpl_getUnparsedTpl(const char *name, int8_t removeHeader, const char *subd
 		char path[255];
 		if((cs_strlen(tpl_getFilePathInSubdir(tpl_path, subdir, name, ".tpl", path, 255)) > 0 && file_exists(path))
 				|| (cs_strlen(subdir) > 0
+#ifdef TOUCH
+					&& strcmp(subdir, TOUCH_SUBDIR)
+#endif
 					&& cs_strlen(tpl_getFilePathInSubdir(tpl_path, ""    , name, ".tpl", path, 255)) > 0 && file_exists(path)))
 		{
 			FILE *fp;
@@ -375,7 +378,7 @@ char *tpl_getUnparsedTpl(const char *name, int8_t removeHeader, const char *subd
 					if(size == 0 && removeHeader)
 					{
 						/* Remove version string from output and check if it is valid for output */
-						char *pch1 = strstr(buffer, "<!--OSCam");
+						char *pch1 = strstr(buffer, "<!--NCam");
 						if(pch1 != NULL)
 						{
 							char *pch2 = strstr(pch1, "-->");
@@ -407,18 +410,20 @@ char *tpl_getUnparsedTpl(const char *name, int8_t removeHeader, const char *subd
 											check_conf(CARDREADER_DB2COM, ptr2);
 											check_conf(CARDREADER_STAPI, ptr2);
 											check_conf(CARDREADER_STAPI5, ptr2);
+											check_conf(CARDREADER_GXAPI, ptr2);
 											check_conf(WEBIF_LIVELOG, ptr2);
 											check_conf(WEBIF_JQUERY, ptr2);
 											check_conf(WITH_COMPRESS_WEBIF, ptr2);
+											check_conf(TOUCH, ptr2);
 											check_conf(CS_ANTICASC, ptr2);
 											check_conf(CS_CACHEEX, ptr2);
 											check_conf(CS_CACHEEX_AIO, ptr2);
 											check_conf(HAVE_DVBAPI, ptr2);
-											check_conf(WITH_EXTENDED_CW, ptr2);
 											check_conf(WITH_NEUTRINO, ptr2);
 											check_conf(READ_SDT_CHARSETS, ptr2);
 											check_conf(CLOCKFIX, ptr2);
 											check_conf(IPV6SUPPORT, ptr2);
+											check_conf(IRDETO_GUESSING, ptr2);
 											check_conf(LCDSUPPORT, ptr2);
 											check_conf(LEDSUPPORT, ptr2);
 											check_conf(MODULE_CAMD33, ptr2);
@@ -446,6 +451,8 @@ char *tpl_getUnparsedTpl(const char *name, int8_t removeHeader, const char *subd
 											check_conf(READER_NAGRA_MERLIN, ptr2);
 											check_conf(READER_SECA, ptr2);
 											check_conf(READER_TONGFANG, ptr2);
+											check_conf(READER_STREAMGUARD, ptr2);
+											check_conf(READER_JET, ptr2);
 											check_conf(READER_VIACCESS, ptr2);
 											check_conf(READER_VIDEOGUARD, ptr2);
 											check_conf(WITH_CARDREADER, ptr2);
@@ -455,6 +462,10 @@ char *tpl_getUnparsedTpl(const char *name, int8_t removeHeader, const char *subd
 											check_conf(WITH_SSL, ptr2);
 											check_conf(WITH_STAPI, ptr2);
 											check_conf(WITH_STAPI5, ptr2);
+											check_conf(WITH_GXAPI, ptr2);
+											check_conf(WITH_CARDLIST, ptr2);
+											check_conf(WITH_EMU, ptr2);
+											check_conf(WITH_SOFTCAM, ptr2);
 										} // for
 										if(ok == 0)
 										{
@@ -589,7 +600,7 @@ int32_t tpl_saveIncludedTpls(const char *path)
 		{
 			if(strncmp(tpl->tpl_name, "IC", 2) != 0)
 			{
-				fprintf(fp, "<!--OSCam;%d;%s;%s-->\n", crc32(0, (uint8_t *)tpl->tpl_data, tpl->tpl_data_len), CS_VERSION, tpl->tpl_deps);
+				fprintf(fp, "<!--NCam;%d;%s;%s;%s-->\n", crc32(0, (uint8_t *)tpl->tpl_data, tpl->tpl_data_len), CS_VERSION, CS_REVISION, tpl->tpl_deps);
 			}
 			fwrite(tpl->tpl_data, tpl->tpl_data_len, 1, fp);
 			fclose(fp);
@@ -614,7 +625,7 @@ void tpl_checkOneDirDiskRevisions(const char *subdir)
 			int8_t error = 1;
 			char *tplorg = tpl_getUnparsedTpl(tpl->tpl_name, 0, subdir);
 			unsigned long checksum = 0, curchecksum = crc32(0L, (uint8_t *)tpl->tpl_data, tpl->tpl_data_len);
-			char *ifdefs = "", *pch1 = strstr(tplorg, "<!--OSCam");
+			char *ifdefs = "", *pch1 = strstr(tplorg, "<!--NCam");
 			if(pch1 != NULL)
 			{
 				char *version = "?", *revision = "?";
@@ -634,12 +645,12 @@ void tpl_checkOneDirDiskRevisions(const char *subdir)
 				}
 				if(checksum != curchecksum)
 				{
-					cs_log("WARNING: Your http disk template %s was created for an older revision of OSCam and was changed in original OSCam (%s,r%s). Please consider upgrading it!", path, version, revision);
+					cs_log("WARNING: Your http disk template %s was created for an older revision of NCam and was changed in original NCam (%s,r%s). Please consider upgrading it!", path, version, revision);
 				}
 				else { error = 0; }
 			}
 			else { cs_log("WARNING: Your http disk template %s is in the old template format without revision info. Please consider upgrading it!", path); }
-			if(error) { cs_log("If you are sure that it is current, add the following line at the beginning of the template to suppress this warning: <!--OSCam;%lu;%s;%s-->", curchecksum, CS_VERSION, ifdefs); }
+			if(error) { cs_log("If you are sure that it is current, add the following line at the beginning of the template to suppress this warning: <!--NCam;%lu;%s;%s;%s-->", curchecksum, CS_VERSION, CS_REVISION, ifdefs); }
 			NULLFREE(tplorg);
 		}
 	}
@@ -779,15 +790,15 @@ char *xml_encode(struct templatevars *vars, const char *chartoencode)
 			pos += 6;
 			break;
 		case '\'':
-			memcpy(encoded + pos, "&apos;", 6);
-			pos += 6;
-			break;
+			memcpy(encoded + pos, "&#39;", 5);
+			pos += 5;
+			break; // &apos; not supported on older IE
 		case '\n':
 			memcpy(encoded + pos, "\n", 1);
 			pos += 1;
 			break;
 		default:
-			if(tmp < 32)
+			if(tmp < 32 || (cfg.http_utf8 != 1 && tmp > 127))
 			{
 				snprintf(buffer, 7, "&#%d;", tmp);
 				memcpy(encoded + pos, buffer, cs_strlen(buffer));

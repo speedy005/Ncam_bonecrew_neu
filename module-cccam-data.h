@@ -62,7 +62,7 @@ typedef enum
 	MSG_CACHE_FEATURE_EXCHANGE = 0x83, // CacheEx feature-exchange
 	MSG_CACHE_FEATURE_EXCHANGE_REPLY = 0x84, // CacheEx feature-exchange-reply
 	MSG_CACHE_FEATURE_TRIGGER = 0x85, // CacheEx feature-trigger
-	MSG_CW_ECM_LGF = 0x86, // oscam lg-flagged CW
+	MSG_CW_ECM_LGF = 0x86, // ncam lg-flagged CW
 #endif
 	MSG_CW_NOK1 = 0xfe, // Node no more available
 	MSG_CW_NOK2 = 0xff, // No decoding
@@ -179,7 +179,7 @@ struct cc_data
 	uint8_t cmd05_aeskey[16];
 	struct cc_crypt_block cmd05_cryptkey;
 
-	uint8_t is_oscam_cccam;
+	uint8_t is_ncam_cccam;
 	uint8_t cmd05_active;
 	int32_t cmd05_data_len;
 	uint8_t cmd05_data[256];
@@ -221,7 +221,7 @@ struct cc_data
 
 	char remote_version[7];
 	char remote_build[7];
-	char remote_oscam[200];
+	char remote_ncam[200];
 
 	uint8_t cccam220;
 	uint32_t remote_build_nr;
@@ -232,8 +232,12 @@ struct cc_data
 	LLIST *extended_ecm_idx;
 
 	// multics detection
-	int8_t multics_mode;
-	int8_t multics_version[2];
+	uint8_t multics_mode;
+	uint8_t multics_version[2];
+
+	// newbox detection
+	int8_t newbox_mode;
+	int8_t newbox_version[2];
 
 	// stats:
 	int32_t num_hop1;

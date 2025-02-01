@@ -262,6 +262,7 @@ void tommy_hashlin_remove_existing(tommy_hashlin* hashlin, tommy_hashlin_node* n
 	--hashlin->count;
 
 	hashlin_shrink_step(hashlin);
+
 }
 
 void* tommy_hashlin_remove(tommy_hashlin* hashlin, tommy_search_func* cmp, const void* cmp_arg, tommy_hash_t hash)

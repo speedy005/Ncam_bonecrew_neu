@@ -2,14 +2,14 @@
 
 #include "globals.h"
 #ifdef MODULE_RADEGAST
-#include "oscam-client.h"
-#include "oscam-ecm.h"
-#include "oscam-net.h"
-#include "oscam-string.h"
-#include "oscam-reader.h"
+#include "ncam-client.h"
+#include "ncam-ecm.h"
+#include "ncam-net.h"
+#include "ncam-string.h"
+#include "ncam-reader.h"
 #ifdef MODULE_STREAMRELAY
 #include "module-streamrelay.h"
-#include "oscam-chk.h"
+#include "ncam-chk.h"
 #endif
 
 static int32_t radegast_connect(void);

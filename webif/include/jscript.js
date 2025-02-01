@@ -1,3 +1,4 @@
+
 var oReloadTimer = null;
 var oCounterTimer = null;
 
@@ -9,6 +10,19 @@ function reloadDocument() {
 
 function cdpause() {
 	clearTimeout(oReloadTimer);
+};
+
+function randomstring(L){
+    // Hexadecimal key
+    var chars = "0123456789ABCDEF";
+    var string_length = 16;
+    var randomstring = '';
+    for (var i=0; i < string_length; i++) {
+        var rnum = Math.floor(Math.random() * chars.length);
+        randomstring += chars.substring(rnum,rnum+1);
+    }
+    document.getElementById("randomfield").value = randomstring;
+    return randomstring;
 };
 
 function runReloadCounter() {
@@ -27,6 +41,10 @@ function initDoc() {
 	if (oCounterTimer) window.clearInterval(oCounterTimer);
 	oCounterTimer = window.setInterval("runReloadCounter();", 1000);
 };
+
+function gotosite(Action) {
+	window.location.href = Action;
+}
 
 /* Function for add new reader/user in readers.html/userconfig.html */
 function addinsert() {
@@ -52,16 +70,16 @@ function cleaninsert(deleteinsert) {
 	for (i = 0; i < tmp_array.length; i++) {
 		if (tmp_array[i] != deleteinsert){
 			existing_inserts[i2] = tmp_array[i];
-			i2++;
+			i2++; 
 		}
 	}
 }
 
 var beep = (function () {
-	var contextClass = (window.AudioContext ||
-						window.webkitAudioContext ||
-						window.mozAudioContext ||
-						window.oAudioContext ||
+	var contextClass = (window.AudioContext || 
+						window.webkitAudioContext || 
+						window.mozAudioContext || 
+						window.oAudioContext || 
 						window.msAudioContext);
 	if (contextClass) {
 		var ctx = new contextClass();
@@ -130,6 +148,12 @@ String.prototype.toHHMMSS = function () {
 	return time;
 }
 
+function runden(value) {
+	var k = (Math.round(value * 100) / 100).toString();
+	k += (k.indexOf('.') == -1) ? '.00' : '00';
+	return k.substring(0, k.indexOf('.') + 3);
+}
+
 /*
  * General: Eventhandler
  */
@@ -195,7 +219,7 @@ $(function () {
 	$('table.status').on('mouseout', 'tr > td.statuscol14', function () {
 		$("#chart").hide();
 	});
-
+	
 	$("#add1regex").click(function () {
 		if (MAX_SEARCH_PATTERN > 98) return;
 		MAX_SEARCH_PATTERN++;
@@ -258,7 +282,7 @@ $(function () {
 				$('#hidden' + i).prop('checked', false);
 				$('#color' + i).val($('.colorPicker_def_color').css('color'));
 				$('#color' + i).change();
-				$('#fcolor' + i).val($('.colorPicker_def_fcolor').css('color'));
+				$('#fcolor' + i).val($('.colorPicker_def_fcolor').css('color'));   
 				$('#fcolor' + i).change();
 				$('#beep' + i).prop('checked', false);
 				localStorage['regex' + i] = '';
@@ -280,7 +304,7 @@ $(function () {
 		}
 		return false;
 	});
-
+	
 	$(".debugls a, .debugl a").click(function () {
 		parameters = parameters + "&debug=" + $(this).attr('sendval');
 		return false;
@@ -344,11 +368,13 @@ $(function () {
 		waitForMsg();
 		if ($(this).data('next-action') == 'enable') {
 			$(this).data('next-action', 'disable').attr('title', 'Disable Reader: ' + $(this).data('reader-name') + $(this).data('desc'));
-			$(rowid).attr('class', 'enabledreader');
+			$(rowid).attr('class', 'undefined');
+			$(rowid + ' > td.readercol19').text('enabled');
 			img.attr('src', 'image?i=ICDIS').attr('alt', 'Disable');
 		} else {
 			$(this).data('next-action', 'enable').attr('title', 'Enable Reader: ' + $(this).data('reader-name') + $(this).data('desc'));
-			$(rowid).attr('class', 'disabledreader');
+			$(rowid).attr('class', 'disabled');
+			$(rowid + ' > td.readercol19').text('offline (disabled)');
 			img.attr('src', 'image?i=ICENA').attr('alt', 'Enable');
 		}
 		parameters = parameters_old;
@@ -461,22 +487,22 @@ $(function () {
  * General: Update page footer and failbannotifier
  */
 function updateFooter(data) {
-	$("#curtime").text(' ' + data.oscam.curdate + ' | ' + data.oscam.curtime + ' ');
-	$("#runtime").text(' ' + data.oscam.runtime);
-	$("#uptime") .text(' ' + data.oscam.uptime);
+	$("#curtime").text(' ' + data.ncam.curdate + ' | ' + data.ncam.curtime + ' ');
+	$("#runtime").text(' ' + data.ncam.runtime);
+	$("#uptime") .text(' ' + data.ncam.uptime);
 
 	if ($("#fbnotifier > span.span_notifier").length) {
-		if (data.oscam.failbannotifier > 0) {
+		if (data.ncam.failbannotifier > 0) {
 			$("#fbnotifier > span.span_notifier")
-				.text(data.oscam.failbannotifier);
+				.text(data.ncam.failbannotifier);
 		}
 		else {
 			$("#fbnotifier > span.span_notifier").remove();
 		}
 	}
-	else if (data.oscam.failbannotifier > 0) {
+	else if (data.ncam.failbannotifier > 0) {
 		$("#fbnotifier")
-			.append('<SPAN CLASS="span_notifier">'+ data.oscam.failbannotifier + '</SPAN>');
+			.append('<SPAN CLASS="span_notifier">'+ data.ncam.failbannotifier + '</SPAN>');
 	}
 }
 
@@ -495,7 +521,7 @@ function is_nopoll(value) {
 function updateUserpage(data) {
 
 	// update user lines
-	$.each(data.oscam.users, function (i, item) {
+	$.each(data.ncam.users, function (i, item) {
 		var uid = "#" + item.user.usermd5;
 		poll_excluded = ($(uid).attr('nopoll') != undefined) ? $(uid).attr('nopoll') : '';
 
@@ -792,7 +818,7 @@ function updateUserpage(data) {
 function updateReaderpage(data) {
 
 	// update reader lines
-	$.each(data.oscam.readers, function (i, item) {
+	$.each(data.ncam.readers, function (i, item) {
 		var uid = "#" + item.labelmd5;
 		poll_excluded = ($(uid).attr('nopoll') != undefined) ? $(uid).attr('nopoll') : '';
 
@@ -802,8 +828,8 @@ function updateReaderpage(data) {
 			$(uid + " td.readercol4").text(item.stats.ecmsok + item.stats.ecmsokrel)
 				.data('sort-value', item.stats.ecmsok);
 		}
-		if (!is_nopoll('readercol19')) {
-			$(uid + " td.readercol19").text(item.stats.ecmsoklg + item.stats.ecmsoklgrel)
+		if (!is_nopoll('readercol20')) {
+			$(uid + " td.readercol20").text(item.stats.ecmsoklg + item.stats.ecmsoklgrel)
 				.data('sort-value', item.stats.ecmsoklg);
 		}
 		if (!is_nopoll('readercol5')) {
@@ -823,8 +849,8 @@ function updateReaderpage(data) {
 		if (!is_nopoll('readercol9')) {
 			$(uid + " td.readercol9").text(item.stats.emmwritten);
 		}
-		if (!is_nopoll('readercol20')) {
-			$(uid + " td.readercol20").html(item.status + "<BR>" + item.ip);
+		if (!is_nopoll('readercol19')) {
+			$(uid + " > td.readercol19").html(item.status + "<BR>" + item.ip);
 		}
 		if (!is_nopoll('readercol10')) {
 			$(uid + " td.readercol10").text(item.stats.emmskipped);
@@ -834,17 +860,6 @@ function updateReaderpage(data) {
 		}
 		if (!is_nopoll('readercol12')) {
 			$(uid + " td.readercol12").text(item.stats.lbweight);
-		}
-		if (!is_nopoll('readercol2')) {
-			if (data.oscam.piconenabled == "1" && item.protoicon) {
-				$(uid + " td.readercol2").html('<img class="protoicon" title="Protocol ' + item.protocol + ' ' +
-					 item.prototitle + '" alt="IC_' + item.protoicon + '" src="image?i=IC_' + item.protoicon + '">');
-			} else {
-				$(uid + " td.readercol2").text(item.protocol);
-			}
-
-			$(uid + " td.readercol2")
-				.data('sort-value', item.protosort);
 		}
 
 		if (typeof custompoll == 'function') {
@@ -945,15 +960,15 @@ function updateLogpage(data) {
 
 	lockpoll = 1;
 
-	if (data.oscam.debug) {
-		setDebuglevel(data.oscam.debug, data.oscam.maxdebug);
+	if (data.ncam.debug) {
+		setDebuglevel(data.ncam.debug, data.ncam.maxdebug);
 	}
-	if (data.oscam.logdisabled) {
+	if (data.ncam.logdisabled) {
 		stoppoll = 1;
 		$("#livelogdata").append('<li>Log is disabled</li>\n');
 	}
 
-	$.each(data.oscam.lines, function (i, item) {
+	$.each(data.ncam.lines, function (i, item) {
 
 		if (isWhitelisted(Base64.decode(item.line))) {
 			var newcolor = getLogColor(Base64.decode(item.line));
@@ -1040,16 +1055,16 @@ function addremoveSubheadline(remove, data, container, subheadline, type) {
 		$(container).removeAttr('style');
 		var strheadline = '<TR id="' + subheadline + '"><TD CLASS="subheadline" COLSPAN="12">';
 		if (type == 'c') {
-			if (data.oscam.status.ucac != '') { //hide idle clients
-				strheadline += '<P id="chead">Clients <span id="ucs">' + data.oscam.status.ucs + '</span>/<span id="uca">' + data.oscam.status.uca + '</span> (<span id="ucac">' + data.oscam.status.ucac + '</span> with ECM within last <span id="cfgh">' + data.oscam.status.cfgh + '</span> seconds)</P>'
+			if (data.ncam.status.ucac != '') { //hide idle clients
+				strheadline += '<P id="chead">Clients <span id="ucs">' + data.ncam.status.ucs + '</span>/<span id="uca">' + data.ncam.status.uca + '</span> (<span id="ucac">' + data.ncam.status.ucac + '</span> with ECM within last <span id="cfgh">' + data.ncam.status.cfgh + '</span> seconds)</P>'
 			} else {
-				strheadline += '<P id="chead">Clients <span id="ucs">' + data.oscam.status.ucs + '</span>/<span id="uca">' + data.oscam.status.uca + '</span></P>'
+				strheadline += '<P id="chead">Clients <span id="ucs">' + data.ncam.status.ucs + '</span>/<span id="uca">' + data.ncam.status.uca + '</span></P>'
 			}
 			strheadline += '<DIV><input type="button" onclick="window.location.href = \'status.html?hideidle=5\';" value="Show Hidden" title="Show Hidden User">';
 			strheadline += '<input type="button" onclick="window.location.href = \'status.html?hideidle=0\';" value="Show Idle" title="Show Idle User">';
 			strheadline += '<input type="button" onclick="window.location.href = \'status.html?hideidle=1\';" value="Hide Idle" title="Hide Idle User">';
 		} else if (type == 'm') {
-			strheadline += '<P id="shead">Server <span id="scs">' + data.oscam.status.scs + '</span>/<span id="sca">' + data.oscam.status.sca + '</span> & Monitors <span id="mcs">' + data.oscam.status.mcs + '</span>/<span id="mca">' + data.oscam.status.mca + '</span></P>'
+			strheadline += '<P id="shead">Server <span id="scs">' + data.ncam.status.scs + '</span>/<span id="sca">' + data.ncam.status.sca + '</span> & Monitors <span id="mcs">' + data.ncam.status.mcs + '</span>/<span id="mca">' + data.ncam.status.mca + '</span></P>'
 			strheadline += '<DIV><input type="button" onclick="window.location.href = \'status.html?hideidle=2\';" value="Show Hidden" title="Show Hidden Server & Monitors">';
 		}
 		strheadline += '</DIV></TD></TR>';
@@ -1060,25 +1075,82 @@ function addremoveSubheadline(remove, data, container, subheadline, type) {
 	}
 }
 
-function fillStatus(list, type, data) {
-	list.forEach(function(key) {
-		$("#" + key).text(data.oscam[type][key]);
-	});
-}
-
-
 /*
  *	Statuspage Functions: Update Totals cacheEx
  */
 function updateCacheextotals(data) {
-	fillStatus(["total_cachexpush", "total_cachexgot", "rel_cachexhit", "total_cachesize"], "totals", data);
+	$("#total_cachexpush").text(data.ncam.totals.total_cachexpush);
+	$("#total_cachexgot").text(data.ncam.totals.total_cachexgot);
+	$("#total_cachexhit").text(data.ncam.totals.total_cachexhit);
+	$("#rel_cachexhit").text(data.ncam.totals.rel_cachexhit);
+	$("#total_cachesize").text(data.ncam.totals.total_cachesize);
 }
 
 /*
  *	Statuspage Functions: Update Totals User + Totals Reader + ECM + EMM
  */
 function updateTotals(data) {
-	fillStatus(["total_users", "total_active", "total_connected", "total_online", "total_disabled", "total_expired", "total_readers", "total_active_readers", "total_connected_readers", "total_disabled_readers", "total_cwok", "total_cwok_readers", "rel_cwok", "rel_cwok_readers", "total_cwcache", "rel_cwcache", "total_cwnok", "total_cwnok_readers", "rel_cwnok", "rel_cwnok_readers", "total_cwtout", "total_cwtout_readers", "rel_cwtout", "rel_cwtout_readers", "total_cwign", "total_ecm_min", "total_cw", "total_cwpos", "total_cwpos_readers", "rel_cwpos", "rel_cwpos_readers", "total_cwneg", "total_cwneg_readers", "rel_cwneg", "rel_cwneg_readers", "total_emok", "rel_emok", "total_emnok", "rel_emnok", "total_em", "total_elenr", "total_eheadr", "total_emmerroruk_readers", "total_emmerrorg_readers", "total_emmerrors_readers", "total_emmerroruq_readers", "total_emmwrittenuk_readers", "total_emmwritteng_readers", "total_emmwrittens_readers", "total_emmwrittenuq_readers", "total_emmskippeduk_readers", "total_emmskippedg_readers", "total_emmskippeds_readers", "total_emmskippeduq_readers", "total_emmblockeduk_readers", "total_emmblockedg_readers", "total_emmblockeds_readers", "total_emmblockeduq_readers", "total_sum_all_readers_ecm", "total_sum_all_readers_emm"], "totals", data);
+	$("#total_users").text(data.ncam.totals.total_users);
+	$("#total_active").text(data.ncam.totals.total_active);
+	$("#total_connected").text(data.ncam.totals.total_connected);
+	$("#total_online").text(data.ncam.totals.total_online);
+	$("#total_disabled").text(data.ncam.totals.total_disabled);
+	$("#total_expired").text(data.ncam.totals.total_expired);
+	$("#total_readers").text(data.ncam.totals.total_readers);
+	$("#total_active_readers").text(data.ncam.totals.total_active_readers);
+	$("#total_connected_readers").text(data.ncam.totals.total_connected_readers);
+	$("#total_disabled_readers").text(data.ncam.totals.total_disabled_readers);
+	$("#total_cwok").text(data.ncam.totals.total_cwok);
+	$("#total_cwok_readers").text(data.ncam.totals.total_cwok_readers);
+	$("#rel_cwok").text(data.ncam.totals.rel_cwok);
+	$("#rel_cwok_readers").text(data.ncam.totals.rel_cwok_readers);
+	$("#total_cwcache").text(data.ncam.totals.total_cwcache);
+	$("#rel_cwcache").text(data.ncam.totals.rel_cwcache);
+	$("#total_cwnok").text(data.ncam.totals.total_cwnok);
+	$("#total_cwnok_readers").text(data.ncam.totals.total_cwnok_readers);
+	$("#rel_cwnok").text(data.ncam.totals.rel_cwnok);
+	$("#rel_cwnok_readers").text(data.ncam.totals.rel_cwnok_readers);
+	$("#total_cwtout").text(data.ncam.totals.total_cwtout);
+	$("#total_cwtout_readers").text(data.ncam.totals.total_cwtout_readers);
+	$("#rel_cwtout").text(data.ncam.totals.rel_cwtout);
+	$("#rel_cwtout_readers").text(data.ncam.totals.rel_cwtout_readers);
+	$("#total_cwign").text(data.ncam.totals.total_cwign);
+	//$( "#rel_cwign" ).text( data.ncam.totals.rel_cwign );
+	$("#total_ecm_min").text(data.ncam.totals.total_ecm_min);
+	$("#total_cw").text(data.ncam.totals.total_cw);
+	$("#total_cwpos").text(data.ncam.totals.total_cwpos);
+	$("#total_cwpos_readers").text(data.ncam.totals.total_cwpos_readers);
+	$("#rel_cwpos").text(data.ncam.totals.rel_cwpos);
+	$("#rel_cwpos_readers").text(data.ncam.totals.rel_cwpos_readers);
+	$("#total_cwneg").text(data.ncam.totals.total_cwneg);
+	$("#total_cwneg_readers").text(data.ncam.totals.total_cwneg_readers);
+	$("#rel_cwneg").text(data.ncam.totals.rel_cwneg);
+	$("#rel_cwneg_readers").text(data.ncam.totals.rel_cwneg_readers);
+	$("#total_emok").text(data.ncam.totals.total_emok);
+	$("#rel_emok").text(data.ncam.totals.rel_emok);
+	$("#total_emnok").text(data.ncam.totals.total_emnok);
+	$("#rel_emnok").text(data.ncam.totals.rel_emnok);
+	$("#total_em").text(data.ncam.totals.total_em);
+	$("#total_elenr").text(data.ncam.totals.total_elenr);
+	$("#total_eheadr").text(data.ncam.totals.total_eheadr);
+	$("#total_emmerroruk_readers").text(data.ncam.totals.total_emmerroruk_readers);
+	$("#total_emmerrorg_readers").text(data.ncam.totals.total_emmerrorg_readers);
+	$("#total_emmerrors_readers").text(data.ncam.totals.total_emmerrors_readers);
+	$("#total_emmerroruq_readers").text(data.ncam.totals.total_emmerroruq_readers);
+	$("#total_emmwrittenuk_readers").text(data.ncam.totals.total_emmwrittenuk_readers);
+	$("#total_emmwritteng_readers").text(data.ncam.totals.total_emmwritteng_readers);
+	$("#total_emmwrittens_readers").text(data.ncam.totals.total_emmwrittens_readers);
+	$("#total_emmwrittenuq_readers").text(data.ncam.totals.total_emmwrittenuq_readers);
+	$("#total_emmskippeduk_readers").text(data.ncam.totals.total_emmskippeduk_readers);
+	$("#total_emmskippedg_readers").text(data.ncam.totals.total_emmskippedg_readers);
+	$("#total_emmskippeds_readers").text(data.ncam.totals.total_emmskippeds_readers);
+	$("#total_emmskippeduq_readers").text(data.ncam.totals.total_emmskippeduq_readers);
+	$("#total_emmblockeduk_readers").text(data.ncam.totals.total_emmblockeduk_readers);
+	$("#total_emmblockedg_readers").text(data.ncam.totals.total_emmblockedg_readers);
+	$("#total_emmblockeds_readers").text(data.ncam.totals.total_emmblockeds_readers);
+	$("#total_emmblockeduq_readers").text(data.ncam.totals.total_emmblockeduq_readers);
+	$("#total_sum_all_readers_ecm").text(data.ncam.totals.total_sum_all_readers_ecm);
+	$("#total_sum_all_readers_emm").text(data.ncam.totals.total_sum_all_readers_emm);
 }
 
 /*
@@ -1087,10 +1159,27 @@ function updateTotals(data) {
 var first_run = 1;
 
 function updateSysinfo(data) {
-	fillStatus(["mem_cur_total", "mem_cur_free", "mem_cur_used", "mem_cur_buff", "mem_cur_cached", "mem_cur_totalsw", "mem_cur_freesw", "mem_cur_usedsw", "mem_cur_shared", "oscam_vmsize", "oscam_rsssize", "server_procs", "cpu_load_0", "cpu_load_1", "cpu_load_2"], "sysinfo", data);
-	$("#mem_cur_freem").attr('title', 'max Free: ' + data.oscam.sysinfo.mem_cur_freem + ' \n(incl. Buffer & Cached)');
+	$("#mem_cur_total").text(data.ncam.sysinfo.mem_cur_total);
+	$("#mem_cur_free").text(data.ncam.sysinfo.mem_cur_free);
+	$("#mem_cur_used").text(data.ncam.sysinfo.mem_cur_used);
+	$("#mem_cur_buff").text(data.ncam.sysinfo.mem_cur_buff);
+	$("#mem_cur_cached").text(data.ncam.sysinfo.mem_cur_cached);
+	$("#mem_cur_freem").attr('title', 'max Free: ' + data.ncam.sysinfo.mem_cur_freem + ' \n(incl. Buffer & Cached)');
+	$("#mem_cur_totalsw").text(data.ncam.sysinfo.mem_cur_totalsw);
+	$("#mem_cur_freesw").text(data.ncam.sysinfo.mem_cur_freesw);
+	$("#mem_cur_usedsw").text(data.ncam.sysinfo.mem_cur_usedsw);
+	$("#mem_cur_shared").text(data.ncam.sysinfo.mem_cur_shared);
+	$("#ncam_vmsize").text(data.ncam.sysinfo.ncam_vmsize);
+	$("#ncam_rsssize").text(data.ncam.sysinfo.ncam_rsssize);
+	$("#server_procs").text(data.ncam.sysinfo.server_procs);
+	$("#cpu_load_0").text(data.ncam.sysinfo.cpu_load_0);
+	$("#cpu_load_1").text(data.ncam.sysinfo.cpu_load_1);
+	$("#cpu_load_2").text(data.ncam.sysinfo.cpu_load_2);
 	if (!first_run) {
-		fillStatus(["oscam_refresh", "oscam_cpu_user", "oscam_cpu_sys", "oscam_cpu_sum"], "sysinfo", data);
+		$("#ncam_refresh").text(data.ncam.sysinfo.ncam_refresh);
+		$("#ncam_cpu_user").text(data.ncam.sysinfo.ncam_cpu_user);
+		$("#ncam_cpu_sys").text(data.ncam.sysinfo.ncam_cpu_sys);
+		$("#ncam_cpu_sum").text(data.ncam.sysinfo.ncam_cpu_sum);
 	}
 	first_run = 0;
 }
@@ -1102,7 +1191,7 @@ function updateStatuspage(data) {
 
 	var updatedclients = "";
 	// update status lines
-	$.each(data.oscam.status.client, function (i, item) {
+	$.each(data.ncam.status.client, function (i, item) {
 		var newrow;
 
 		//add ID's for type c and m to list of existing elements. We need this to delete all not longer existing
@@ -1129,7 +1218,7 @@ function updateStatuspage(data) {
 					if (!$("#Serverheadline").length) {
 						addremoveSubheadline(0, data, container, "Serverheadline", item.type);
 					} else if (!$("#mca").length) {
-						$("#shead").append(' & Monitors <span id="mcs">' + data.oscam.status.mcs + '</span>/<span id="mca">' + data.oscam.status.mca + '</span>');
+						$("#shead").append(' & Monitors <span id="mcs">' + data.ncam.status.mcs + '</span>/<span id="mca">' + data.ncam.status.mca + '</span>');
 					}
 				}
 			} else if ('px'.indexOf(item.type) > (-1)) {
@@ -1172,20 +1261,20 @@ function updateStatuspage(data) {
 					'" href="status.html?hide=' +
 					item.thid.substring(3, item.thid.length) +
 					'"><img class="icon" alt="Hide"' +
-					'" src="image?i=ICHID">');
+					'" src="image?i=ICHID"></img>');
 			}
 
 			if (!is_nopoll('statuscol1')) {
 				$(uid + " > td.statuscol1").append('<a title="' + kill2 + ' ' +
 					name1 + ': ' + name3 + (item.desc ? '\n' + item.desc.replace('&#13;', '') : '') +
-					kill1 + '"><img class="icon" alt="' + kill2 +
-					'" src="image?i=' + kill3 + '">');
+					kill1 + '"><img class="icon" alt="' + kill2 + 
+					'" src="image?i=' + kill3 + '"></img>');
 			}
 
 			if (!is_nopoll('statuscol4')) {
-				if (data.oscam.piconenabled == "1" && !item.upicmissing) {
+				if (data.ncam.piconenabled == "1" && !item.upicmissing) {
 					$(uid + " > td.statuscol4").append('<a href="' + edit1 + name2 + '"><img class="statususericon" title="Edit ' +
-						name1 + ': ' + name3 + (item.desc ? '\n' + item.desc.replace('&#13;', '') : '') + '" src="image?i=IC_' + name2 + '"></a>');
+						name1 + ': ' + name3 + (item.desc ? '\n' + item.desc.replace('&#13;', '') : '') + '" src="image?i=IC_' + name2 + '"></img></a>');
 				} else {
 					$(uid + " > td.statuscol4").append('<a href="' + edit1 + name2 + '" title="Edit ' + name1 + ': ' +
 						name3 + (item.desc ? '\n' + item.desc.replace('&#13;', '') : '') + '\n' + item.upicmissing + '">' + name3 + '</a>');
@@ -1193,13 +1282,13 @@ function updateStatuspage(data) {
 			}
 
 			if (!is_nopoll('statuscol13')) {
-				$(uid + " > td.statuscol13").append('<A HREF="files.html?file=' + data.oscam.srvidfile + '" TITLE="' + item.request + '"/>');
+				$(uid + " > td.statuscol13").append('<A HREF="files.html?file=' + data.ncam.srvidfile + '" TITLE="' + item.request + '"/>');
 			}
 
 			if (!is_nopoll('statuscol9')) {
-				if (data.oscam.piconenabled == "1" && item.protoicon) {
-					$(uid + " > td.statuscol9").append('<img class="protoicon" title="Protocol ' + item.protocol + ' ' +
-						item.protocolext + '" alt="IC_' + item.protoicon + '" src="image?i=IC_' + item.protoicon + '">');
+				if (data.ncam.piconenabled == "1" && item.protoicon) {
+					$(uid + " > td.statuscol9").append('<img class="protoicon" title="Protocol ' + item.protocol + ' ' + 
+						item.protocolext + '" alt="IC_' + item.protoicon + '" src="image?i=IC_' + item.protoicon + '"></img>');
 				} else {
 					$(uid + " > td.statuscol9").attr('title', item.protocolext).text(item.protocol);
 				}
@@ -1211,19 +1300,19 @@ function updateStatuspage(data) {
 		// fix for anonymous newcamd-clients
 		if ($(uid + " > td.statuscol4").text().match('anonymous')) {
 			if (!is_nopoll('statuscol9')) {
-				if (data.oscam.piconenabled == "1" && item.protoicon) {
-					$(uid + " > td.statuscol9").html('<img class="protoicon" title="Protocol ' + item.protocol + ' ' +
-						item.protocolext + '" alt="IC_' + item.protoicon + '" src="image?i=IC_' + item.protoicon + '">');
+				if (data.ncam.piconenabled == "1" && item.protoicon) {
+					$(uid + " > td.statuscol9").html('<img class="protoicon" title="Protocol ' + item.protocol + ' ' + 
+						item.protocolext + '" alt="IC_' + item.protoicon + '" src="image?i=IC_' + item.protoicon + '"></img>');
 				} else {
 					$(uid + " > td.statuscol9").attr('title', item.protocolext).text(item.protocol);
 				}
 			}
 
 			if (!is_nopoll('statuscol4')) {
-				if (data.oscam.piconenabled == "1" && !item.upicmissing) {
+				if (data.ncam.piconenabled == "1" && !item.upicmissing) {
 					$(uid + " > td.statuscol4").html('<a href="user_edit.html?user=' + item.name_enc +
 						'"><img class="statususericon" title="Edit User: ' + decodeURIComponent(item.name_enc) + item.desc +
-						'" src="image?i=IC_' + item.name_enc + '"></a>');
+						'" src="image?i=IC_' + item.name_enc + '"></img></a>');
 				} else {
 					$(uid + " > td.statuscol4").html('<a href="user_edit.html?user=' + item.name_enc + '" title="Edit User: ' +
 						decodeURIComponent(item.name_enc) + item.desc + item.upicmissing + '">' + decodeURIComponent(item.name_enc) + '</a>');
@@ -1264,7 +1353,7 @@ function updateStatuspage(data) {
 		if (!is_nopoll('statuscol13')) {
 			var newimage;
 
-			if (data.oscam.piconenabled == '1' && item.request.srvid != '0000' && item.request.picon) {
+			if (data.ncam.piconenabled == '1' && item.request.srvid != '0000' && item.request.picon) {
 
 				// if we already have a picon within link
 				if ($(uid + " > td.statuscol13 > a > img.statususericon").length) {
@@ -1285,7 +1374,7 @@ function updateStatuspage(data) {
 
 					// if we have no link we create one
 					if (!$(uid + " > td.statuscol13 > a").length) {
-						$(uid + " > td.statuscol13").append('<a href="files.html?file=' + data.oscam.srvidfile + '"/>');
+						$(uid + " > td.statuscol13").append('<a href="files.html?file=' + data.ncam.srvidfile + '"/>');
 					}
 					// set title of link as tooltip
 					$(uid + " > td.statuscol13 > a").attr('title', item.request.chname + item.request.chprovider);
@@ -1304,7 +1393,7 @@ function updateStatuspage(data) {
 			} else {
 				// picon is not delivered in JSON - we set the text of column
 				if (item.request.chname && item.request.srvid != '0000') {
-					$(uid + " > td.statuscol13").html('<a href="files.html?file=' + data.oscam.srvidfile + '"/>');
+					$(uid + " > td.statuscol13").html('<a href="files.html?file=' + data.ncam.srvidfile + '"/>');
 					$(uid + " > td.statuscol13 > a").html(item.request.chname + item.request.chprovider);
 					$(uid + " > td.statuscol13 > a").attr('title', item.request.chname + item.request.chprovider);
 				} else {
@@ -1318,7 +1407,7 @@ function updateStatuspage(data) {
 				$(uid + " > td.statuscol14").text('');
 			} else {
 				var value = item.type == 'c' ? (item.request.answered ? item.request.answered + ' (' + item.request.msvalue + ' ms)' : '') : item.request.lbvalue;
-				if (data.oscam.lbdefined) {
+				if (data.ncam.lbdefined) {
 					var label = item.rname_enc.replace('+%28cache%29', '');
 					var name = item.type == 'c' ? item.request.answered.replace(' (cache)', '') : decodeURIComponent(label);
 					if (!$(uid + " > td.statuscol14 > a").length) {
@@ -1420,67 +1509,67 @@ function updateStatuspage(data) {
 	});
 
 	// if we have no clients left we remove the headline
-	if (!$("tr.c").length && data.oscam.status.uca == '0') {
+	if (!$("tr.c").length && data.ncam.status.uca == '0') {
 		addremoveSubheadline(1, '', '', "Userheadline", 'c');
 	}
 	// if we have no servers/monitors left we remove the headline
-	if (!$("tr.m").length && data.oscam.status.mca == '0') {
+	if (!$("tr.m").length && data.ncam.status.mca == '0') {
 		if ($("#mca").length) {
-			$("#shead").replaceWith('<P id="shead">Server <span id="scs">' + data.oscam.status.scs + '</span>/<span id="sca">' + data.oscam.status.sca + '</span></P>');
+			$("#shead").replaceWith('<P id="shead">Server <span id="scs">' + data.ncam.status.scs + '</span>/<span id="sca">' + data.ncam.status.sca + '</span></P>');
 		}
-		if (!$("tr.s").length && !$("tr.h").length && data.oscam.status.sch == '0') {
+		if (!$("tr.s").length && !$("tr.h").length && data.ncam.status.sch == '0') {
 			addremoveSubheadline(1, '', '', "Serverheadline", 'm');
 		}
 	}
 
 	//update client-headline
-	if (data.oscam.status.uca != '0') {
+	if (data.ncam.status.uca != '0') {
 		if (!$("#Userheadline").length) {
 			addremoveSubheadline(0, data, "#tbodyc", "Userheadline", "c");
 		} else {
-			$("#ucs").text(data.oscam.status.ucs);
-			$("#uca").text(data.oscam.status.uca);
-			if (data.oscam.status.ucac != '0') $("#ucac").text(data.oscam.status.ucac);
+			$("#ucs").text(data.ncam.status.ucs);
+			$("#uca").text(data.ncam.status.uca);
+			if (data.ncam.status.ucac != '0') $("#ucac").text(data.ncam.status.ucac);
 		}
 	}
 	//update server/monitor-headline
-	if (data.oscam.status.mca != '0' && $("#mcs")) {
-		$("#mcs").text(data.oscam.status.mcs);
-		$("#mca").text(data.oscam.status.mca);
+	if (data.ncam.status.mca != '0' && $("#mcs")) {
+		$("#mcs").text(data.ncam.status.mcs);
+		$("#mca").text(data.ncam.status.mca);
 	}
 
 	//update reader-headline
-	if(data.oscam.status.rco != '0') {
-		var rcon = (data.oscam.status.rca - data.oscam.status.rco);
+	if(data.ncam.status.rco != '0') {
+		var rcon = (data.ncam.status.rca - data.ncam.status.rco);
 		if($("#rco").length) {
-			$("#rcc").text(data.oscam.status.rcc);
-			$("#rca").text(data.oscam.status.rca);
+			$("#rcc").text(data.ncam.status.rcc);
+			$("#rca").text(data.ncam.status.rca);
 			$("#rco").text(rcon);
 		} else {
-			$("#rhead").html('Readers <span id="rcc">' + data.oscam.status.rcc + '</span>/' + data.oscam.status.rca + ' (<span id="rco">' + rcon + '</span> of ' + data.oscam.status.rca + ' CARDOK)');
+			$("#rhead").html('Readers <span id="rcc">' + data.ncam.status.rcc + '</span>/' + data.ncam.status.rca + ' (<span id="rco">' + rcon + '</span> of ' + data.ncam.status.rca + ' CARDOK)');
 		}
 	} else if($("#rco").length) {
-		$("#rhead").html('Readers <span id="rcc">' + data.oscam.status.rcc + '</span>/' + data.oscam.status.rca);
+		$("#rhead").html('Readers <span id="rcc">' + data.ncam.status.rcc + '</span>/' + data.ncam.status.rca);
 	} else {
-		$("#rcc").text(data.oscam.status.rcc);
-		$("#rca").text(data.oscam.status.rca);
+		$("#rcc").text(data.ncam.status.rcc);
+		$("#rca").text(data.ncam.status.rca);
 	}
 
 	//update proxy-headline
-	if(data.oscam.status.pco != '0') {
-		var pcon = (data.oscam.status.pca - data.oscam.status.pco);
+	if(data.ncam.status.pco != '0') {
+		var pcon = (data.ncam.status.pca - data.ncam.status.pco);
 		if($("#pco").length) {
-			$("#pcc").text(data.oscam.status.pcc);
-			$("#pca").text(data.oscam.status.pca);
+			$("#pcc").text(data.ncam.status.pcc);
+			$("#pca").text(data.ncam.status.pca);
 			$("#pco").text(pcon);
 		} else {
-			$("#phead").html('Proxies <span id="pcc">' + data.oscam.status.pcc + '</span>/' + data.oscam.status.pca + ' (<span id="pco">' + pcon + '</span> of ' + data.oscam.status.pca + ' online)');
+			$("#phead").html('Proxies <span id="pcc">' + data.ncam.status.pcc + '</span>/' + data.ncam.status.pca + ' (<span id="pco">' + pcon + '</span> of ' + data.ncam.status.pca + ' online)');
 		}
 	} else if($("#pco").length) {
-		$("#phead").html('Proxies <span id="pcc">' + data.oscam.status.pcc + '</span>/' + data.oscam.status.pca);
+		$("#phead").html('Proxies <span id="pcc">' + data.ncam.status.pcc + '</span>/' + data.ncam.status.pca);
 	} else {
-		$("#pcc").text(data.oscam.status.pcc);
-		$("#pca").text(data.oscam.status.pca);
+		$("#pcc").text(data.ncam.status.pcc);
+		$("#pca").text(data.ncam.status.pca);
 	}
 
 	// update footer
@@ -1497,6 +1586,13 @@ function updateStatuspage(data) {
 
 }
 
+
+/*
+ * Cacheexpage Functions: Update Page
+ */
+function updateCacheexpage(data) {
+	updateCacheextotals(data);
+}
 
 /*
  *	General fork into page refresh functions
@@ -1523,7 +1619,7 @@ function updatePage(data) {
 		updateLogpage(data);
 		break;
 	case 'cacheex':
-		updateCacheextotals(data);
+		updateCacheexpage(data);
 		break;
 	default:
 		break;
@@ -1599,7 +1695,7 @@ function setPollrefresh() {
 	// Set pollintervall, if pollrefresh set to 0 disable polling
 	if (pollrefresh) {
 		pollintervall = parseInt(pollrefresh) * 1000;
-		if (pollintervall > 99000) pollintervall = 99000;
+		if (pollintervall > 99000) pollintervall == 99000;
 		if (!nostorage) {
 			if (sessionStorage.pollintervall) pollintervall = sessionStorage.pollintervall;
 			else sessionStorage.pollintervall = pollintervall;
@@ -1632,9 +1728,9 @@ $(document).ready(function () {
 	poll_excluded = '';
 
 	// help wiki links
-	if (typeof oscamconf != "undefined") {
+	/*if (typeof ncamconf != "undefined") {
 		var language = $('meta[http-equiv="language"]').attr("content");
-		var wikihref = "https://wiki.streamboard.tv/wiki/OSCam/" + language + "/Config/oscam." + oscamconf + "#";
+		var wikihref = "http://www.lonasdigital.com/wiki/NCam/" + language + "/Config/ncam." + ncamconf + "#";
 		$("form table a").click(function () {
 			if (!$(this).attr("href") && !$(this).attr("name")) {
 				if ($(this).data('p')) {
@@ -1645,7 +1741,7 @@ $(document).ready(function () {
 				window.open(wikihref + parm);
 			}
 		});
-	}
+	}*/
 
 	// Title
 	var pagename = (typeof page != 'undefined' ? page : $(location).attr('pathname').replace(/.*\/|\.[^.]*$/g, ''));
@@ -1660,7 +1756,7 @@ $(document).ready(function () {
 			var saved_regex = localStorage.MAX_SEARCH_PATTERN;
 			MAX_SEARCH_PATTERN = parseInt(saved_regex ? saved_regex : MAX_SEARCH_PATTERN);
 			$('<LI style="display:none;"><span class="colorPicker_def_color"></span><span class="colorPicker_def_fcolor"></span></LI>').insertBefore(".regexdata_save");
-
+			
 			var beep_disabled = ' disabled="disabled" title="Not supported by your browser"';
 			var contextClass = (window.AudioContext || window.webkitAudioContext || window.mozAudioContext || window.oAudioContext || window.msAudioContext);
 			if (contextClass) { beep_disabled = ''; }
@@ -1712,6 +1808,7 @@ $(document).ready(function () {
 			break;
 
 		default:
+			//do nothing
 
 			break;
 		}
@@ -1745,14 +1842,14 @@ function decodeVideoguardEMM(text, target, addHideButton) {
 		html += '<p><input type="button" value="Hide" title="Hide" onclick="$(\'' + target + '\').css(\'display\', \'none\');" /></p><br/>';
 	}
 
-  var AddTextType = {"data":"Data", "length":"Length", "type":"Type", "emmType":"EMM-Type", "encryptionType":"Encryption Type",
-  	"keyIndex":"Key-Index", "keyIndex2":"Key-Index2", "fixedValue":"Fixed Value", "pairingDevice":"Pairing Device", "date":"Date",
-  	"checksum":"Checksum", "emmStartMarker":"EMM Marker", "cardSerial":"Serial Number (Smartcard)",
-  	"boxSerial":"Serial Number (Receiver)", "emmEndMarker":"Sub-EMM End", "rest":"rest ????",
-  	"cardEmmLength":"Card EMM Length", "cardNanoLength":"Card Nano Length", "irdEmmLength":"IRD EMM Length",
-  	"filterSectionLength":"Filter Section Length", "irdNanoLength":"IRD Nano Length", "cardNanoType":"Card Nano Type",
-  	"irdNanoType":"IRD Nano Type", "filterNanoType":"Filter Nano Type", "cardGroupSerial":"Serial Number (Card Group)",
-  	"mpegSectionLength":"EMM Length", "irdEmmChecksum":"IRD EMM Checksum", "pairingdeviceCount":"Pairing Device Count"};
+	var AddTextType = {"data":"Data", "length":"Length", "type":"Type", "emmType":"EMM-Type", "encryptionType":"Encryption Type",
+	 "keyIndex":"Key-Index", "keyIndex2":"Key-Index2", "fixedValue":"Fixed Value", "pairingDevice":"Pairing Device", "date":"Date",
+	 "checksum":"Checksum", "emmStartMarker":"EMM Marker", "cardSerial":"Serial Number (Smartcard)",
+	 "boxSerial":"Serial Number (Receiver)", "emmEndMarker":"Sub-EMM End", "rest":"rest ????",
+	 "cardEmmLength":"Card EMM Length", "cardNanoLength":"Card Nano Length", "irdEmmLength":"IRD EMM Length",
+	 "filterSectionLength":"Filter Section Length", "irdNanoLength":"IRD Nano Length", "cardNanoType":"Card Nano Type",
+	 "irdNanoType":"IRD Nano Type", "filterNanoType":"Filter Nano Type", "cardGroupSerial":"Serial Number (Card Group)",
+	 "mpegSectionLength":"EMM Length", "irdEmmChecksum":"IRD EMM Checksum", "pairingdeviceCount":"Pairing Device Count"};
 
 	function addText(count, color, text, parm) {
 
@@ -1953,7 +2050,6 @@ function decodeVideoguardEMM(text, target, addHideButton) {
 				break;
 			case AddTextType.date:
 				var b = ret.replace(/[^A-Fa-f0-9]/g, "").match(/.{1,2}/g) || [];
-
 				var bin = parseInt(b[2] + b[3], 16);
 				var time = {};
 				time.s = ((bin & parseInt('11111', 2)) * 2);
@@ -1991,6 +2087,7 @@ function decodeVideoguardEMM(text, target, addHideButton) {
 				} else {
 					text += ' - <font style="color:#F00000"><b>FAIL (' + checksum.toString(16).toUpperCase() + ')</b></font>';
 				}
+
 				break;
 		}
 
@@ -2022,7 +2119,7 @@ function decodeVideoguardEMM(text, target, addHideButton) {
 				"33": 0x23,
 				"3D": 0x02,
 				"3E": 0x00,
-				"41": 0x05,//0x04
+				"41": 0x05,
 				"42": 0x02,
 				"44": 0x04,
 				"4E": 0x04,
@@ -2120,6 +2217,10 @@ function decodeVideoguardEMM(text, target, addHideButton) {
 	}
 }
 
+	// ----------------------------------------------------------------------
+	// ----------------------------------------------------------------------
+	// ----------------------------------------------------------------------
+
 	var partOfLength = bytes[1];
 	addText(2, '#000', AddTextType.emmStartMarker);
 	addText(1, '#00F', AddTextType.mpegSectionLength, partOfLength);
@@ -2130,7 +2231,7 @@ function decodeVideoguardEMM(text, target, addHideButton) {
 
 	if(partOfLength != 0) { // partOfLength == 0 for emms by cccam clients, these do not have the serials part
 		for(var i = 0; i < subEmmCount; i++) {
- 			if (type == 0x40) { // unique: card
+			if (type == 0x40) { // unique: card
 				addText(4, '#cc7000', AddTextType.cardSerial);
 			} else if (type == 0xC0) { // unique: receiver/cam
 				addText(4, '#cc7000', AddTextType.boxSerial);

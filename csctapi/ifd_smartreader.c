@@ -12,9 +12,9 @@
 #else
 #include <libusb-1.0/libusb.h>
 #endif
-#include "../oscam-lock.h"
-#include "../oscam-string.h"
-#include "../oscam-time.h"
+#include "../ncam-lock.h"
+#include "../ncam-string.h"
+#include "../ncam-time.h"
 #include "icc_async.h" // atr.h included in icc_async.h
 #include "ifd_smartreader_types.h"
 
@@ -899,8 +899,13 @@ static int32_t smartreader_set_latency_timer(struct s_reader *reader, uint16_t  
 	return 0;
 }
 
+#if defined(__CYGWIN__)
+static WINAPI read_callback(struct libusb_transfer *transfer)
+{
+#else
 static void read_callback(struct libusb_transfer *transfer)
 {
+#endif
 	struct s_reader *reader = (struct s_reader *)transfer->user_data;
 	struct sr_data *crdr_data = reader->crdr_data;
 	int32_t copy_size;
@@ -1031,18 +1036,21 @@ static int32_t smartreader_usb_open_dev(struct s_reader *reader)
 			{
 				rdr_log(reader, "inappropriate permissions on device!");
 				return (-8);
-			} else {
+			}
+			else
+			{
 				rdr_log(reader, "unable to set usb configuration. Make sure smartreader_sio is unloaded!");
 				return (-3);
 			}
-		} else {
+		}
+		else
+		{
 			rdr_log_dbg(rdr, D_IFD, "libusb_set_configuration failed");
 		}
 	}
 #endif
 
 	ret = libusb_claim_interface(crdr_data->usb_dev_handle, crdr_data->interface) ;
-
 	if(ret != 0)
 	{
 		smartreader_usb_close_internal(reader);
@@ -1050,12 +1058,15 @@ static int32_t smartreader_usb_open_dev(struct s_reader *reader)
 		{
 			rdr_log(reader, "inappropriate permissions on device!");
 			return (-8);
-		} else {
+		}
+		else
+		{
 			rdr_log(reader, "unable to claim usb device. Make sure smartreader_sio is unloaded!");
 			return (-5);
 		}
 	}
-	else {
+	else
+	{
 		rdr_log_dbg(reader, D_IFD, "smartreader_usb_close_internal OK");
 	}
 
@@ -1078,7 +1089,9 @@ static int32_t smartreader_usb_open_dev(struct s_reader *reader)
 		if(usbdesc.idProduct == 0x6011)
 		{
 			crdr_data->type = TYPE_4232H;
-		} else {
+		}
+		else
+		{
 			crdr_data->type = TYPE_2232C;
 		}
 	}
@@ -1154,15 +1167,15 @@ static void EnableSmartReader(struct s_reader *reader, uint32_t baud_temp2, int3
 
 	// command 4 , set parameter T
 	temp_T = T;
-	if(T == 2)  // special trick to get ATR for Irdeto card, we need T=1 at reset, after that oscam takes care of T1 protocol, so we need T=0
-		//if(crdr_data->irdeto) // special trick to get ATR for Irdeto card, we need T=1 at reset, after that oscam takes care of T1 protocol, so we need T=0
+	if(T == 2)  // special trick to get ATR for Irdeto card, we need T=1 at reset, after that ncam takes care of T1 protocol, so we need T=0
+		//if(crdr_data->irdeto) // special trick to get ATR for Irdeto card, we need T=1 at reset, after that ncam takes care of T1 protocol, so we need T=0
 	{
 		T = 1;
 		crdr_data->T = 1;
 		temp_T = 1;
 	}
 	else if(T == 1)
-		{ T = 0; } // T=1 protocol is handled by oscam
+		{ T = 0; } // T=1 protocol is handled by ncam
 
 	rdr_log_dbg(reader, D_DEVICE, "SR: sending T=%02X (%d) to smartreader", T, T);
 	Prot[0] = 0x04;
@@ -1222,7 +1235,9 @@ static void *ReaderThread(void *p)
 		if(ret != 0)
 		{
 			rdr_log_dbg(reader, D_IFD, "libusb_submit_transfer ok");
-		} else {
+		}
+		else
+		{
 			rdr_log_dbg(reader, D_IFD, "libusb_submit_transfer failed");
 		}
 	}
@@ -1362,7 +1377,6 @@ static int32_t SR_Init(struct s_reader *reader)
 		rdr_log(reader, "Unable to open smartreader device %s in bus %s endpoint in 0x%02X out 0x%02X (ret=%d)\n", dev, busname, crdr_data->in_ep, crdr_data->out_ep, ret);
 		return ERROR;
 	}
-
 	if (crdr_data->rdrtype >= 2) {
 		//Set the FTDI latency timer to 16 ms is ftdi default latency.
 		ret = smartreader_set_latency_timer(reader, 16);
@@ -1372,7 +1386,6 @@ static int32_t SR_Init(struct s_reader *reader)
 		ret = smartreader_set_latency_timer(reader, 1);
 		rdr_log_dbg(reader, D_DEVICE, "SR: Setting smartreader latency timer to %d ms", ret);
 	}
-
 		//Set databits to 8o2
 	ret = smartreader_set_line_property(reader, BITS_8, STOP_BIT_2, ODD);
 	if(ret != 0)

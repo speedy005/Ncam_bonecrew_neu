@@ -9,11 +9,11 @@
 
 #include "module-dvbapi.h"
 #include "module-dvbapi-azbox.h"
-#include "oscam-client.h"
-#include "oscam-ecm.h"
-#include "oscam-reader.h"
-#include "oscam-string.h"
-#include "oscam-time.h"
+#include "ncam-client.h"
+#include "ncam-ecm.h"
+#include "ncam-reader.h"
+#include "ncam-string.h"
+#include "ncam-time.h"
 
 // These variables are declared in module-dvbapi.c
 extern void *dvbapi_client;
@@ -64,7 +64,8 @@ static void azbox_openxcas_ecm_callback(int32_t stream_id, uint32_t UNUSED(seq),
 	tp.time += 500;
 }
 
-
+#pragma GCC diagnostic pop
+#pragma GCC diagnostic ignored "-Wunused-function"
 static void azbox_openxcas_ex_callback(int32_t stream_id, uint32_t seq, int32_t idx, uint32_t pid, uint8_t *ecm_data, int32_t l)
 {
 	cs_log_dbg(D_DVBAPI, "ex callback received");
@@ -103,13 +104,18 @@ static void azbox_openxcas_ex_callback(int32_t stream_id, uint32_t seq, int32_t 
 	memset(&comp, 0x00, sizeof(comp));
 
 	mask[0] = 0xff;
-	comp[0] = ecm_data[0] ^ 1;
+
+	if(caid_is_dvn(openxcas_caid))
+		comp[0] = 0x50;
+	else
+		comp[0] = ecm_data[0] ^ 1;
 
 	if((openxcas_filter_idx = openxcas_start_filter_ex(stream_id, seq, openxcas_ecm_pid, mask, comp, (void *)azbox_openxcas_ex_callback)) < 0)
 		{ cs_log("unable to start ex filter"); }
 	else
 		{ cs_log_dbg(D_DVBAPI, "ex filter started, pid = %x", openxcas_ecm_pid); }
 }
+#pragma GCC diagnostic push
 
 static void *azbox_main_thread(void *cli)
 {
@@ -180,8 +186,16 @@ static void *azbox_main_thread(void *cli)
 				memset(&mask, 0x00, sizeof(mask));
 				memset(&comp, 0x00, sizeof(comp));
 
-				mask[0] = 0xfe;
-				comp[0] = 0x80;
+				if(caid_is_dvn(openxcas_caid))
+				{
+					mask[0] = 0xff;
+					comp[0] = 0x50;
+				}
+				else
+				{
+					mask[0] = 0xfe;
+					comp[0] = 0x80;
+				}
 
 				if((ret = openxcas_add_filter(msg.stream_id, OPENXCAS_FILTER_ECM, 0, 0xffff, openxcas_ecm_pid, mask, comp, (void *)azbox_openxcas_ecm_callback)) < 0)
 					{ cs_log("unable to add ecm filter"); }
@@ -283,8 +297,16 @@ void azbox_send_dcw(struct s_client *client, ECM_REQUEST *er)
 			memset(&mask, 0x00, sizeof(mask));
 			memset(&comp, 0x00, sizeof(comp));
 
-			mask[0] = 0xfe;
-			comp[0] = 0x80;
+			if(caid_is_dvn(openxcas_caid))
+			{
+				mask[0] = 0xff;
+				comp[0] = 0x50;
+			}
+			else
+			{
+				mask[0] = 0xfe;
+				comp[0] = 0x80;
+			}
 
 			if(openxcas_add_filter(openxcas_stream_id, OPENXCAS_FILTER_ECM, 0, 0xffff, openxcas_ecm_pid, mask, comp, (void *)azbox_openxcas_ecm_callback) < 0)
 			{
@@ -312,7 +334,9 @@ void azbox_send_dcw(struct s_client *client, ECM_REQUEST *er)
 	int32_t n;
 	for(n = 0; n < 2; n++)
 	{
-		if(memcmp(er->cw + (n * 8), demux[0].last_cw[0][n], 8) && (memcmp(er->cw + (n * 8), nullcw, 8) != 0))
+		// Skip check for BISS1 - cw could be indeed zero
+		// Skip check for BISS2 - we use the extended cw, so the "simple" cw is always zero
+		if(memcmp(er->cw + (n * 8), demux[0].last_cw[0][n], 8) && (memcmp(er->cw + (n * 8), nullcw, 8) != 0 || caid_is_biss(er->caid)))
 		{
 			memcpy(demux[0].last_cw[0][n], er->cw + (n * 8), 8);
 			memcpy(openxcas_cw + (n * 8), er->cw + (n * 8), 8);
@@ -334,7 +358,7 @@ void azbox_send_dcw(struct s_client *client, ECM_REQUEST *er)
 void azbox_init(void)
 {
 	openxcas_debug_message_onoff(1);  // debug
-	if(__openxcas_open("oscamCAS") < 0)
+	if(__openxcas_open("ncamCAS") < 0)
 		{ cs_log("could not init"); }
 }
 

@@ -5,12 +5,12 @@
 #ifdef MODULE_GBOX
 #include "module-gbox.h"
 #include "module-gbox-sms.h"
-#include "oscam-string.h"
-#include "oscam-files.h"
-#include "oscam-string.h"
-#include "oscam-client.h"
-#include "oscam-time.h"
-#include "oscam-lock.h"
+#include "ncam-string.h"
+#include "ncam-files.h"
+#include "ncam-string.h"
+#include "ncam-client.h"
+#include "ncam-time.h"
+#include "ncam-lock.h"
 
 static int32_t poll_gsms_data(uint16_t *boxid, uint8_t *num, char *text)
 {

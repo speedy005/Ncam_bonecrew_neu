@@ -7,12 +7,12 @@
 #include "module-cccam.h"
 #include "module-cccam-data.h"
 #include "module-cccshare.h"
-#include "oscam-chk.h"
-#include "oscam-client.h"
-#include "oscam-lock.h"
-#include "oscam-string.h"
-#include "oscam-time.h"
-#include "oscam-work.h"
+#include "ncam-chk.h"
+#include "ncam-client.h"
+#include "ncam-lock.h"
+#include "ncam-string.h"
+#include "ncam-time.h"
+#include "ncam-work.h"
 
 extern uint32_t cfg_sidtab_generation;
 
@@ -28,7 +28,6 @@ static bool share_updater_thread_active;
 static bool share_updater_refresh;
 
 int32_t card_valid_for_client(struct s_client *cl, struct cc_card *card);
-int32_t flt = 0;
 
 LLIST *get_cardlist(uint16_t caid, LLIST **list)
 {
@@ -1203,7 +1202,6 @@ void update_card_list(void)
 
 				add_card_to_serverlist(get_cardlist(card->caid, server_cards), card, 1);
 			}
-			flt = 1;
 		}
 	}
 	else
@@ -1230,7 +1228,7 @@ void update_card_list(void)
 				}
 			}
 
-			flt = 0;
+			int32_t flt = 0;
 
 			int8_t reshare = rdr->cc_reshare > -1 ? rdr->cc_reshare : cfg.cc_reshare;
 
@@ -1268,7 +1266,7 @@ void update_card_list(void)
 							if(chk_ident(&rdr->ftab, card) && chk_ctab(card->caid, &rdr->ctab))
 							{
 								if(!rdr->audisabled)
-									{ cc_UA_oscam2cccam(rdr->hexserial, card->hexserial, card->caid); }
+									{ cc_UA_ncam2cccam(rdr->hexserial, card->hexserial, card->caid); }
 
 								add_card_to_serverlist(get_cardlist(card->caid, server_cards), card, 1);
 								flt = 1;
@@ -1298,7 +1296,7 @@ void update_card_list(void)
 
 						//Setting UA: (Unique Address):
 						if(!rdr->audisabled)
-							{ cc_UA_oscam2cccam(rdr->hexserial, card->hexserial, caid); }
+							{ cc_UA_ncam2cccam(rdr->hexserial, card->hexserial, caid); }
 						//cs_log("Ident CCcam card report caid: %04X readr %s subid: %06X", rdr->ftab.filts[j].caid, rdr->label, rdr->cc_id);
 						for(k = 0; k < rdr->ftab.filts[j].nprids; k++)
 						{
@@ -1317,7 +1315,7 @@ void update_card_list(void)
 								{
 									uint32_t rprid = get_reader_prid(rdr, l);
 									if(rprid == prov->prov)
-										{ cc_SA_oscam2cccam(&rdr->sa[l][0], prov->sa); }
+										{ cc_SA_ncam2cccam(&rdr->sa[l][0], prov->sa); }
 								}
 							}
 
@@ -1352,7 +1350,7 @@ void update_card_list(void)
 						}
 						card->card_type = CT_CARD_BY_CAID1;
 						if(!rdr->audisabled)
-							{ cc_UA_oscam2cccam(rdr->hexserial, card->hexserial, lcaid); }
+							{ cc_UA_ncam2cccam(rdr->hexserial, card->hexserial, lcaid); }
 
 						add_good_bad_sids_by_rdr(rdr, card);
 						add_card_to_serverlist(get_cardlist(lcaid, server_cards), card, 1);
@@ -1379,7 +1377,7 @@ void update_card_list(void)
 						card->card_type = CT_CARD_BY_CAID2;
 
 						if(!rdr->audisabled)
-							{ cc_UA_oscam2cccam(rdr->hexserial, card->hexserial, caid); }
+							{ cc_UA_ncam2cccam(rdr->hexserial, card->hexserial, caid); }
 						for(j = 0; j < rdr->nprov; j++)
 						{
 							uint32_t prid = get_reader_prid(rdr, j);
@@ -1394,7 +1392,7 @@ void update_card_list(void)
 							if(!rdr->audisabled)
 							{
 								//Setting SA (Shared Addresses):
-								cc_SA_oscam2cccam(rdr->sa[j], prov->sa);
+								cc_SA_ncam2cccam(rdr->sa[j], prov->sa);
 							}
 							ll_append(card->providers, prov);
 							//cs_log("Main CCcam card report provider: %02X%02X%02X%02X", buf[21+(j*7)], buf[22+(j*7)], buf[23+(j*7)], buf[24+(j*7)]);
@@ -1422,7 +1420,7 @@ void update_card_list(void)
 					card->card_type = CT_CARD_BY_CAID3;
 
 					if(!rdr->audisabled)
-						{ cc_UA_oscam2cccam(rdr->hexserial, card->hexserial, caid); }
+						{ cc_UA_ncam2cccam(rdr->hexserial, card->hexserial, caid); }
 					for(j = 0; j < rdr->nprov; j++)
 					{
 						uint32_t prid = get_reader_prid(rdr, j);
@@ -1437,7 +1435,7 @@ void update_card_list(void)
 						if(!rdr->audisabled)
 						{
 							//Setting SA (Shared Addresses):
-							cc_SA_oscam2cccam(rdr->sa[j], prov->sa);
+							cc_SA_ncam2cccam(rdr->sa[j], prov->sa);
 						}
 						ll_append(card->providers, prov);
 						//cs_log("Main CCcam card report provider: %02X%02X%02X%02X", buf[21+(j*7)], buf[22+(j*7)], buf[23+(j*7)], buf[24+(j*7)]);

@@ -1,7 +1,7 @@
 #include "../globals.h"
 
 #ifdef CARDREADER_DB2COM
-#include "../oscam-time.h"
+#include "../ncam-time.h"
 #include "icc_async.h"
 #include "ifd_phoenix.h"
 #include "io_serial.h"

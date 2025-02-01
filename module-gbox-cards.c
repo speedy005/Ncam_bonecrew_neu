@@ -6,18 +6,17 @@
 #include "module-gbox.h"
 #include "module-gbox-cards.h"
 #include "module-gbox-helper.h"
-#include "oscam-lock.h"
-#include "oscam-garbage.h"
-#include "oscam-files.h"
-#include "oscam-chk.h"
-#include "oscam-string.h"
-#include "oscam-time.h"
+#include "ncam-lock.h"
+#include "ncam-garbage.h"
+#include "ncam-files.h"
+#include "ncam-chk.h"
+#include "ncam-string.h"
+#include "ncam-time.h"
 
 LLIST *gbox_cards;
 CS_MUTEX_LOCK gbox_cards_lock;
 uint8_t checkcode[7];
 uint8_t last_checkcode[7];
-uint8_t sid_verified = 0;
 
 GBOX_CARDS_ITER *gbox_cards_iter_create(void)
 {
@@ -546,8 +545,6 @@ uint8_t gbox_get_cards_for_ecm(uint8_t *send_buf, int32_t len2, uint8_t max_card
 		if(card->origin_peer && card->origin_peer->gbox.id == peer_id && card->type == GBOX_CARD_TYPE_GBOX &&
 			gbox_get_caid(card->caprovid) == er->caid && gbox_get_provid(card->caprovid) == er->prid && !is_already_pending(er->gbox_cards_pending, card->id.peer, card->id.slot))
 		{
-			sid_verified = 0;
-
 			// check if sid is good
 			it2 = ll_iter_create(card->goodsids);
 			while((srvid_good = ll_iter_next(&it2)))
@@ -569,7 +566,6 @@ uint8_t gbox_get_cards_for_ecm(uint8_t *send_buf, int32_t len2, uint8_t max_card
 						i2b_buf(2, card->id.peer, send_buf + len2);
 						send_buf[len2 + 2] = card->id.slot;
 						len2 = len2 + 3;
-						sid_verified = 1;
 						break;
 					}
 				}
@@ -589,7 +585,7 @@ uint8_t gbox_get_cards_for_ecm(uint8_t *send_buf, int32_t len2, uint8_t max_card
 		if(card->origin_peer && card->origin_peer->gbox.id == peer_id && card->type == GBOX_CARD_TYPE_GBOX &&
 			gbox_get_caid(card->caprovid) == er->caid && gbox_get_provid(card->caprovid) == er->prid && !is_already_pending(er->gbox_cards_pending, card->id.peer, card->id.slot) && !enough)
 		{
-			sid_verified = 0;
+			uint8_t sid_verified = 0;
 
 			// check if sid is good
 			it2 = ll_iter_create(card->goodsids);

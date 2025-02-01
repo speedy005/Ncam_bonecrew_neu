@@ -1,5 +1,5 @@
 #include "globals.h"
-#include "oscam-string.h"
+#include "ncam-string.h"
 #include "reader-common.h"
 #include "reader-dre-st20.h"
 #include "reader-dre-common.h"

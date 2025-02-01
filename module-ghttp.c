@@ -2,11 +2,11 @@
 
 #include "globals.h"
 #ifdef MODULE_GHTTP
-#include "oscam-client.h"
-#include "oscam-net.h"
-#include "oscam-string.h"
-#include "oscam-reader.h"
-#include "oscam-work.h"
+#include "ncam-client.h"
+#include "ncam-net.h"
+#include "ncam-string.h"
+#include "ncam-reader.h"
+#include "ncam-work.h"
 #include "module-dvbapi.h"
 #ifdef WITH_SSL
 #include <openssl/crypto.h>

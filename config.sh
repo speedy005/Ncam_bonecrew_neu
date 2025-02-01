@@ -1,33 +1,36 @@
 #!/bin/sh
 
-addons="WEBIF WEBIF_LIVELOG WEBIF_JQUERY WITH_COMPRESS_WEBIF WITH_SSL HAVE_DVBAPI WITH_EXTENDED_CW WITH_NEUTRINO READ_SDT_CHARSETS CS_ANTICASC WITH_DEBUG MODULE_MONITOR WITH_LB CS_CACHEEX CS_CACHEEX_AIO CW_CYCLE_CHECK LCDSUPPORT LEDSUPPORT CLOCKFIX IPV6SUPPORT WITH_ARM_NEON WITH_SIGNING"
+addons="WEBIF WEBIF_LIVELOG WEBIF_JQUERY WITH_COMPRESS_WEBIF TOUCH WITH_SSL HAVE_DVBAPI WITH_NEUTRINO READ_SDT_CHARSETS IRDETO_GUESSING CS_ANTICASC WITH_DEBUG MODULE_MONITOR WITH_LB CS_CACHEEX CS_CACHEEX_AIO CW_CYCLE_CHECK LCDSUPPORT LEDSUPPORT CLOCKFIX IPV6SUPPORT WITH_SIGNING WITH_CARDLIST WITH_EMU WITH_SOFTCAM"
 protocols="MODULE_CAMD33 MODULE_CAMD35 MODULE_CAMD35_TCP MODULE_NEWCAMD MODULE_CCCAM MODULE_CCCSHARE MODULE_GBOX MODULE_RADEGAST MODULE_SCAM MODULE_SERIAL MODULE_CONSTCW MODULE_PANDORA MODULE_GHTTP MODULE_STREAMRELAY"
-readers="READER_NAGRA READER_NAGRA_MERLIN READER_IRDETO READER_CONAX READER_CRYPTOWORKS READER_SECA READER_VIACCESS READER_VIDEOGUARD READER_DRE READER_TONGFANG READER_BULCRYPT READER_GRIFFIN READER_DGCRYPT"
-card_readers="CARDREADER_PHOENIX CARDREADER_INTERNAL CARDREADER_SC8IN1 CARDREADER_MP35 CARDREADER_SMARGO CARDREADER_DB2COM CARDREADER_STAPI CARDREADER_STAPI5 CARDREADER_STINGER CARDREADER_DRECAS"
+readers="READER_NAGRA READER_NAGRA_MERLIN READER_IRDETO READER_CONAX READER_CRYPTOWORKS READER_SECA READER_VIACCESS READER_VIDEOGUARD READER_DRE READER_TONGFANG READER_STREAMGUARD READER_JET READER_BULCRYPT READER_GRIFFIN READER_DGCRYPT"
+card_readers="CARDREADER_PHOENIX CARDREADER_INTERNAL CARDREADER_SC8IN1 CARDREADER_MP35 CARDREADER_SMARGO CARDREADER_DB2COM CARDREADER_STAPI CARDREADER_STAPI5 CARDREADER_GXAPI CARDREADER_STINGER CARDREADER_DRECAS"
 
 defconfig="
 CONFIG_WEBIF=y
 CONFIG_WEBIF_LIVELOG=y
 CONFIG_WEBIF_JQUERY=y
 CONFIG_WITH_COMPRESS_WEBIF=y
+# CONFIG_TOUCH=n
 # CONFIG_WITH_SSL=n
 CONFIG_HAVE_DVBAPI=y
-# CONFIG_WITH_EXTENDED_CW=n
 # CONFIG_WITH_NEUTRINO=n
 CONFIG_READ_SDT_CHARSETS=y
-# CONFIG_CS_ANTICASC=n
+# CONFIG_IRDETO_GUESSING=n
+CONFIG_CS_ANTICASC=y
 CONFIG_WITH_DEBUG=y
 CONFIG_MODULE_MONITOR=y
 CONFIG_WITH_LB=y
-# CONFIG_CS_CACHEEX=n
-# CONFIG_CS_CACHEEX_AIO=n
-# CONFIG_CW_CYCLE_CHECK=n
+CONFIG_CS_CACHEEX=y
+CONFIG_CS_CACHEEX_AIO=y
+CONFIG_CW_CYCLE_CHECK=y
 # CONFIG_LCDSUPPORT=n
 # CONFIG_LEDSUPPORT=n
 # CONFIG_CLOCKFIX=n
 # CONFIG_IPV6SUPPORT=n
-# CONFIG_WITH_ARM_NEON=n
 # CONFIG_WITH_SIGNING=n
+# CONFIG_WITH_CARDLIST=n
+CONFIG_WITH_EMU=y
+CONFIG_WITH_SOFTCAM=y
 # CONFIG_MODULE_CAMD33=n
 CONFIG_MODULE_CAMD35=y
 CONFIG_MODULE_CAMD35_TCP=y
@@ -37,9 +40,9 @@ CONFIG_MODULE_CCCSHARE=y
 CONFIG_MODULE_GBOX=y
 # CONFIG_MODULE_RADEGAST=n
 # CONFIG_MODULE_SERIAL=n
-# CONFIG_MODULE_CONSTCW=n
+CONFIG_MODULE_CONSTCW=y
 # CONFIG_MODULE_PANDORA=n
-# CONFIG_MODULE_SCAM=n
+CONFIG_MODULE_SCAM=y
 # CONFIG_MODULE_GHTTP=n
 # CONFIG_MODULE_STREAMRELAY=n
 CONFIG_WITH_CARDREADER=y
@@ -54,6 +57,8 @@ CONFIG_READER_VIACCESS=y
 CONFIG_READER_VIDEOGUARD=y
 CONFIG_READER_DRE=y
 CONFIG_READER_TONGFANG=y
+CONFIG_READER_STREAMGUARD=y
+CONFIG_READER_JET=y
 CONFIG_READER_BULCRYPT=y
 CONFIG_READER_GRIFFIN=y
 CONFIG_READER_DGCRYPT=y
@@ -66,28 +71,29 @@ CARDREADER_INTERNAL=y
 # CARDREADER_DB2COM=n
 # CARDREADER_STAPI=n
 # CARDREADER_STAPI5=n
-# CARDREADER_STINGER=n
+# CARDREADER_GXAPI=n
+CARDREADER_STINGER=y
 "
 
 usage() {
 	echo \
-"OSCam config
+"NCam config
 Usage: `basename $0` [parameters]
 
- -g, --gui                    Start interactive configuration
+ -g, --gui                 Start interactive configuration
 
- -s, --show-enabled [param]   Show enabled configuration options.
- -Z, --show-disabled [param]  Show disabled configuration options.
- -S, --show-valid [param]     Show valid configuration options.
-                              Possible params: all, addons, protocols,
-                                               readers, card_readers
+ -s, --show-enabled [param] Show enabled configuration options.
+ -Z, --show-disabled [param] Show disabled configuration options.
+ -S, --show-valid [param]  Show valid configuration options.
+                           Possible params: all, addons, protocols,
+                                            readers, card_readers
 
- -l, --list-config            List active configuration variables.
- -e, --enabled [option]       Check if certain option is enabled.
- -d, --disabled [option]      Check if certain option is disabled.
+ -l, --list-config         List active configuration variables.
+ -e, --enabled [option]    Check if certain option is enabled.
+ -d, --disabled [option]   Check if certain option is disabled.
 
- -E, --enable [option]        Enable config option.
- -D, --disable [option]       Disable config option.
+ -E, --enable [option]     Enable config option.
+ -D, --disable [option]    Disable config option.
 
     The following [option]s enable or disable multiple settings.
       all          - Everything.
@@ -96,7 +102,7 @@ Usage: `basename $0` [parameters]
       readers      - All readers.
       card_readers - All card readers.
 
- -R, --restore                Restore default config.
+ -R, --restore             Restore default config.
 
  -cc, --create-cert [option]  Create a new self signed X.509 certificate and private key.
 
@@ -104,7 +110,7 @@ Usage: `basename $0` [parameters]
       ecdsa|rsa       - key type (default: ecdsa)
       prime256v1|4096 - key length (default: prime256v1), any ecdsa curve or rsa length should work
       ca              - create Root CA certificates
-      subject         - X.509 certificate subject e.g. 'My OSCam Distribution'
+      subject         - X.509 certificate subject e.g. 'My NCam Distribution'
 
  -cf, --cert-file [option]    Get filename of requested (cert|privkey) type.
  -ci, --cert-info             Get a list of useful certificate information.
@@ -114,10 +120,11 @@ Usage: `basename $0` [parameters]
       certificate filename - relative/absolute path to certificate file
       private key filename - relative/absolute path to private key file
 
- -sm, --sign-marker           Get Oscam binary signature marker.
- -um, --upx-marker            Get Oscam binary upx marker.
- -v, --oscam-version          Display OSCam version.
- -c, --oscam-commit           Display OSCam GIT short commit sha 8-digits.
+ -sm, --sign-marker          Get Ncam binary signature marker.
+ -um, --upx-marker           Get Ncam binary upx marker.
+ -v, --ncam-version          Display Ncam version.
+ -r, --ncam-revision         Display Ncam SVN revision. //DEPRECATED, will be removed in later versions
+ -c, --ncam-commit           Display Ncam GIT short commit sha 8-digits.
 
  -O, --detect-osx-sdk-version Find where OS X SDK is located
 
@@ -142,14 +149,14 @@ Examples:
   # Disable all card readers except INTERNAL
   ./config.sh -D card_readers -E CARDREADER_INTERNAL
 
-  # Create new self signed private key and certificate with defaults
+ # Create new self signed private key and certificate with defaults
   ./config.sh --create-cert
 
   # Create new self signed private key and certificate with custom settings
   ./config.sh --create-cert rsa 4096
 
   # Create new Root CA with private key and certificate with custom settings
-  ./config.sh --create-cert ecdsa prime256v1 ca 'My OSCam Distribution'
+  ./config.sh --create-cert ecdsa prime256v1 ca 'My NCam Distribution'
 
 Available options:
        addons: $addons
@@ -328,13 +335,17 @@ get_opts() {
 
 update_deps() {
 	# Calculate dependencies
-	enabled_any $(get_opts readers) $(get_opts card_readers) && enable_opt WITH_CARDREADER >/dev/null
-	disabled_all $(get_opts readers) $(get_opts card_readers) && disable_opt WITH_CARDREADER >/dev/null
+	enabled_any $(get_opts readers) $(get_opts card_readers) WITH_EMU && enable_opt WITH_CARDREADER >/dev/null
+	disabled_all $(get_opts readers) $(get_opts card_readers) WITH_EMU && disable_opt WITH_CARDREADER >/dev/null
+	disabled WITH_CARDREADER && disable_opt WITH_CARDLIST >/dev/null
 	disabled WEBIF && disable_opt WEBIF_LIVELOG >/dev/null
 	disabled WEBIF && disable_opt WEBIF_JQUERY >/dev/null
 	enabled MODULE_CCCSHARE && enable_opt MODULE_CCCAM >/dev/null
 	enabled_any CARDREADER_DB2COM CARDREADER_MP35 CARDREADER_SC8IN1 CARDREADER_STINGER && enable_opt CARDREADER_PHOENIX >/dev/null
-	enabled CS_CACHEEX_AIO && enable_opt CS_CACHEEX >/dev/null
+	disabled CS_CACHEEX && disable_opt CS_CACHEEX_AIO >/dev/null
+	enabled WITH_EMU && enable_opt READER_VIACCESS >/dev/null
+	enabled WITH_EMU && enable_opt MODULE_NEWCAMD >/dev/null
+	disabled WITH_EMU && disable_opt WITH_SOFTCAM >/dev/null
 	enabled WITH_SIGNING && enable_opt WITH_SSL >/dev/null
 }
 
@@ -342,7 +353,11 @@ list_config() {
 	update_deps
 	# Handle use flags
 	have_flag USE_STAPI && echo "CONFIG_WITH_STAPI=y" || echo "# CONFIG_WITH_STAPI=n"
+#	have_flag USE_STAPI && enable_opt CARDREADER_STAPI >/dev/null || disable_opt CARDREADER_STAPI >/dev/null
 	have_flag USE_STAPI5 && echo "CONFIG_WITH_STAPI5=y" || echo "# CONFIG_WITH_STAPI5=n"
+#	have_flag USE_STAPI5 && enable_opt CARDREADER_STAPI5 >/dev/null || disable_opt CARDREADER_STAPI5 >/dev/null
+	have_flag USE_GXAPI && echo "CONFIG_WITH_GXAPI=y" || echo "# CONFIG_WITH_GXAPI=n"
+#	have_flag USE_GXAPI && enable_opt CARDREADER_GXAPI >/dev/null || disable_opt CARDREADER_GXAPI >/dev/null
 	have_flag USE_COOLAPI && echo "CONFIG_WITH_COOLAPI=y" || echo "# CONFIG_WITH_COOLAPI=n"
 	have_flag USE_COOLAPI2 && echo "CONFIG_WITH_COOLAPI2=y" || echo "# CONFIG_WITH_COOLAPI2=n"
 	have_flag USE_SU980 && echo "CONFIG_WITH_SU980=y" || echo "# CONFIG_WITH_SU980=n"
@@ -376,6 +391,12 @@ list_config() {
 			enabled $OPT && have_flag USE_STAPI5 && echo "CONFIG_$OPT=y" || echo "# CONFIG_$OPT=n"
 			continue
 		fi
+		if [ $OPT = CARDREADER_GXAPI ]
+		then
+			# Enable CARDREADER_GXAPI only if USE_GXAPI is set
+			enabled $OPT && have_flag USE_GXAPI && echo "CONFIG_$OPT=y" || echo "# CONFIG_$OPT=n"
+			continue
+		fi
 		enabled $OPT && echo "CONFIG_$OPT=y" || echo "# CONFIG_$OPT=n"
 	done
 	have_flag USE_LIBUSB && echo "CONFIG_CARDREADER_SMART=y" || echo "# CONFIG_CARDREADER_SMART=n"
@@ -385,9 +406,10 @@ list_config() {
 	not_have_flag USE_LIBCRYPTO && echo "CONFIG_LIB_AES=y" || echo "# CONFIG_LIB_AES=n"
 	enabled MODULE_CCCAM && echo "CONFIG_LIB_RC6=y" || echo "# CONFIG_LIB_RC6=n"
 	not_have_flag USE_LIBCRYPTO && enabled MODULE_CCCAM && echo "CONFIG_LIB_SHA1=y" || echo "# CONFIG_LIB_SHA1=n"
-	enabled_any READER_DRE MODULE_SCAM READER_VIACCESS READER_NAGRA READER_NAGRA_MERLIN READER_VIDEOGUARD READER_CONAX READER_TONGFANG && echo "CONFIG_LIB_DES=y" || echo "# CONFIG_LIB_DES=n"
-	enabled_any MODULE_CCCAM READER_NAGRA READER_NAGRA_MERLIN READER_SECA && echo "CONFIG_LIB_IDEA=y" || echo "# CONFIG_LIB_IDEA=n"
-	not_have_flag USE_LIBCRYPTO && enabled_any READER_CONAX READER_CRYPTOWORKS READER_NAGRA READER_NAGRA_MERLIN && echo "CONFIG_LIB_BIGNUM=y" || echo "# CONFIG_LIB_BIGNUM=n"
+	enabled_any READER_DRE MODULE_SCAM READER_VIACCESS READER_TONGFANG READER_STREAMGUARD READER_JET READER_NAGRA READER_NAGRA_MERLIN READER_VIDEOGUARD WITH_EMU && echo "CONFIG_LIB_DES=y" || echo "# CONFIG_LIB_DES=n"
+	enabled_any MODULE_CCCAM READER_NAGRA READER_NAGRA_MERLIN READER_SECA WITH_EMU && echo "CONFIG_LIB_IDEA=y" || echo "# CONFIG_LIB_IDEA=n"
+	enabled_any READER_JET && echo "CONFIG_LIB_TWOFISH=y" || echo "CONFIG_LIB_TWOFISH=n"
+	not_have_flag USE_LIBCRYPTO && enabled_any READER_CONAX READER_CRYPTOWORKS READER_NAGRA READER_NAGRA_MERLIN WITH_EMU && echo "CONFIG_LIB_BIGNUM=y" || echo "# CONFIG_LIB_BIGNUM=n"
 	enabled READER_NAGRA_MERLIN && echo "CONFIG_LIB_MDC2=y" || echo "# CONFIG_LIB_MDC2=n"
 	enabled READER_NAGRA_MERLIN && echo "CONFIG_LIB_FAST_AES=y" || echo "# CONFIG_LIB_FAST_AES=n"
 	enabled_any READER_NAGRA_MERLIN WITH_SIGNING && echo "CONFIG_LIB_SHA256=y" || echo "# CONFIG_LIB_SHA256=n"
@@ -493,27 +515,30 @@ print_components() {
 
 menu_addons() {
 	${DIALOG} --checklist "\nChoose add-ons:\n " $height $width $listheight \
-		WEBIF				"Web Interface"									$(check_test "WEBIF") \
-		WEBIF_LIVELOG		"LiveLog"										$(check_test "WEBIF_LIVELOG") \
+		WEBIF			"Web Interface"						$(check_test "WEBIF") \
+		WEBIF_LIVELOG		"LiveLog"						$(check_test "WEBIF_LIVELOG") \
 		WEBIF_JQUERY		"Jquery onboard (if disabled webload)"			$(check_test "WEBIF_JQUERY") \
-		WITH_COMPRESS_WEBIF	"Compress webpages"								$(check_test "WITH_COMPRESS_WEBIF") \
-		WITH_SSL			"OpenSSL support"								$(check_test "WITH_SSL") \
-		HAVE_DVBAPI			"DVB API"										$(check_test "HAVE_DVBAPI") \
-		WITH_EXTENDED_CW	"DVB API EXTENDED CW API"						$(check_test "WITH_EXTENDED_CW") \
-		WITH_NEUTRINO		"Neutrino support"								$(check_test "WITH_NEUTRINO") \
-		READ_SDT_CHARSETS	"DVB API read-sdt charsets"						$(check_test "READ_SDT_CHARSETS") \
-		CS_ANTICASC			"Anti cascading"								$(check_test "CS_ANTICASC") \
-		WITH_DEBUG			"Debug messages"								$(check_test "WITH_DEBUG") \
-		MODULE_MONITOR		"Monitor"										$(check_test "MODULE_MONITOR") \
-		WITH_LB				"Loadbalancing"									$(check_test "WITH_LB") \
-		CS_CACHEEX			"Cache exchange"								$(check_test "CS_CACHEEX") \
-		CS_CACHEEX_AIO		"Cache exchange aio (depend on Cache exchange)"	$(check_test "CS_CACHEEX_AIO") \
-		CW_CYCLE_CHECK		"CW Cycle Check"								$(check_test "CW_CYCLE_CHECK") \
-		LCDSUPPORT			"LCD support"									$(check_test "LCDSUPPORT") \
-		LEDSUPPORT			"LED support"									$(check_test "LEDSUPPORT") \
-		CLOCKFIX			"Clockfix (disable on old systems!)"			$(check_test "CLOCKFIX") \
-		IPV6SUPPORT			"IPv6 support (experimental)"					$(check_test "IPV6SUPPORT") \
-		WITH_ARM_NEON		"ARM NEON (SIMD/MPE) support"					$(check_test "WITH_ARM_NEON") \
+		WITH_COMPRESS_WEBIF	"Compress webpages"					$(check_test "WITH_COMPRESS_WEBIF") \
+		TOUCH			"Touch Web Interface"					$(check_test "TOUCH") \
+		WITH_SSL		"OpenSSL support"					$(check_test "WITH_SSL") \
+		HAVE_DVBAPI		"DVB API"						$(check_test "HAVE_DVBAPI") \
+                WITH_NEUTRINO		"Neutrino support"                      		$(check_test "WITH_NEUTRINO") \
+		READ_SDT_CHARSETS	"DVB API read-sdt charsets"				$(check_test "READ_SDT_CHARSETS") \
+		IRDETO_GUESSING		"Irdeto guessing"					$(check_test "IRDETO_GUESSING") \
+		CS_ANTICASC		"Anti cascading"					$(check_test "CS_ANTICASC") \
+		WITH_DEBUG		"Debug messages"					$(check_test "WITH_DEBUG") \
+		MODULE_MONITOR		"Monitor"						$(check_test "MODULE_MONITOR") \
+		WITH_LB			"Loadbalancing"						$(check_test "WITH_LB") \
+		CS_CACHEEX		"Cache exchange"					$(check_test "CS_CACHEEX") \
+		CS_CACHEEX_AIO		"Cache exchange aio (depend on Cache exchange)"		$(check_test "CS_CACHEEX_AIO") \
+		CW_CYCLE_CHECK		"CW Cycle Check"					$(check_test "CW_CYCLE_CHECK") \
+		LCDSUPPORT		"LCD support"						$(check_test "LCDSUPPORT") \
+		LEDSUPPORT		"LED support"						$(check_test "LEDSUPPORT") \
+		CLOCKFIX		"Clockfix (disable on old systems!)"			$(check_test "CLOCKFIX") \
+		IPV6SUPPORT		"IPv6 support (experimental)"				$(check_test "IPV6SUPPORT") \
+		WITH_CARDLIST		"Cardlist support"					$(check_test "WITH_CARDLIST") \
+		WITH_EMU		"Emulator support"					$(check_test "WITH_EMU") \
+		WITH_SOFTCAM		"Built-in SoftCam.Key"					$(check_test "WITH_SOFTCAM") \
 		WITH_SIGNING		"Binary signing with X.509 certificate"			$(check_test "WITH_SIGNING") \
 		2> ${tempfile}
 
@@ -526,20 +551,20 @@ menu_addons() {
 
 menu_protocols() {
 	${DIALOG} --checklist "\nChoose protocols:\n " $height $width $listheight \
-		MODULE_CAMD33		"camd 3.3"			$(check_test "MODULE_CAMD33") \
+		MODULE_CAMD33		"camd 3.3"		$(check_test "MODULE_CAMD33") \
 		MODULE_CAMD35		"camd 3.5 UDP"		$(check_test "MODULE_CAMD35") \
 		MODULE_CAMD35_TCP	"camd 3.5 TCP"		$(check_test "MODULE_CAMD35_TCP") \
-		MODULE_NEWCAMD		"newcamd"			$(check_test "MODULE_NEWCAMD") \
-		MODULE_CCCAM		"CCcam"				$(check_test "MODULE_CCCAM") \
-		MODULE_CCCSHARE		"CCcam share"		$(check_test "MODULE_CCCSHARE") \
-		MODULE_GBOX			"gbox"				$(check_test "MODULE_GBOX") \
-		MODULE_RADEGAST		"radegast"			$(check_test "MODULE_RADEGAST") \
-		MODULE_SERIAL		"Serial"			$(check_test "MODULE_SERIAL") \
+		MODULE_NEWCAMD		"newcamd"		$(check_test "MODULE_NEWCAMD") \
+		MODULE_CCCAM		"CCcam"		$(check_test "MODULE_CCCAM") \
+		MODULE_CCCSHARE	"CCcam share"		$(check_test "MODULE_CCCSHARE") \
+		MODULE_GBOX		"gbox"			$(check_test "MODULE_GBOX") \
+		MODULE_RADEGAST	"radegast"		$(check_test "MODULE_RADEGAST") \
+		MODULE_SERIAL		"Serial"		$(check_test "MODULE_SERIAL") \
 		MODULE_CONSTCW		"constant CW"		$(check_test "MODULE_CONSTCW") \
-		MODULE_PANDORA		"Pandora"			$(check_test "MODULE_PANDORA") \
-		MODULE_GHTTP		"Ghttp"				$(check_test "MODULE_GHTTP") \
-		MODULE_SCAM			"scam"				$(check_test "MODULE_SCAM") \
-		MODULE_STREAMRELAY	"Stream Relay"		$(check_test "MODULE_STREAMRELAY") \
+		MODULE_PANDORA		"Pandora"		$(check_test "MODULE_PANDORA") \
+		MODULE_GHTTP		"Ghttp"		$(check_test "MODULE_GHTTP") \
+		MODULE_SCAM		"scam"			$(check_test "MODULE_SCAM") \
+		MODULE_STREAMRELAY	"Stream Relay (experimental)"		$(check_test "MODULE_STREAMRELAY") \
 		2> ${tempfile}
 
 	opt=${?}
@@ -553,17 +578,19 @@ menu_readers() {
 	${DIALOG} --checklist "\nChoose readers (CA systems):\n " $height $width $listheight \
 		READER_NAGRA		"Nagravision"		$(check_test "READER_NAGRA") \
 		READER_NAGRA_MERLIN	"Nagra Merlin"		$(check_test "READER_NAGRA_MERLIN") \
-		READER_IRDETO		"Irdeto"			$(check_test "READER_IRDETO") \
-		READER_CONAX		"Conax"				$(check_test "READER_CONAX") \
+		READER_IRDETO		"Irdeto"		$(check_test "READER_IRDETO") \
+		READER_CONAX		"Conax"		$(check_test "READER_CONAX") \
 		READER_CRYPTOWORKS	"Cryptoworks"		$(check_test "READER_CRYPTOWORKS") \
-		READER_SECA			"Seca"				$(check_test "READER_SECA") \
-		READER_VIACCESS		"Viaccess"			$(check_test "READER_VIACCESS") \
+		READER_SECA		"Seca"			$(check_test "READER_SECA") \
+		READER_VIACCESS	"Viaccess"		$(check_test "READER_VIACCESS") \
 		READER_VIDEOGUARD	"NDS Videoguard"	$(check_test "READER_VIDEOGUARD") \
-		READER_DRE			"DRE Crypt"			$(check_test "READER_DRE") \
-		READER_TONGFANG		"Tongfang"			$(check_test "READER_TONGFANG") \
-		READER_BULCRYPT		"Bulcrypt"			$(check_test "READER_BULCRYPT") \
-		READER_GRIFFIN		"Griffin"			$(check_test "READER_GRIFFIN") \
-		READER_DGCRYPT		"DGCrypt"			$(check_test "READER_DGCRYPT") \
+		READER_DRE		"DRE Crypt"		$(check_test "READER_DRE") \
+		READER_TONGFANG	"Tongfang"		$(check_test "READER_TONGFANG") \
+		READER_STREAMGUARD	"Streamguard"		$(check_test "READER_STREAMGUARD") \
+		READER_JET		"Jet"			$(check_test "READER_JET") \
+		READER_BULCRYPT	"Bulcrypt"		$(check_test "READER_BULCRYPT") \
+		READER_GRIFFIN		"Griffin"		$(check_test "READER_GRIFFIN") \
+		READER_DGCRYPT		"DGCrypt"		$(check_test "READER_DGCRYPT") \
 		2> ${tempfile}
 
 	opt=${?}
@@ -575,16 +602,17 @@ menu_readers() {
 
 menu_card_readers() {
 	${DIALOG} --checklist "\nChoose card reader drivers:\n " $height $width $listheight \
-		CARDREADER_PHOENIX	"Phoenix/mouse"					$(check_test "CARDREADER_PHOENIX") \
+		CARDREADER_PHOENIX	"Phoenix/mouse"			$(check_test "CARDREADER_PHOENIX") \
 		CARDREADER_INTERNAL	"Internal (Sci,Azbox,Cool)"		$(check_test "CARDREADER_INTERNAL") \
-		CARDREADER_SC8IN1	"SC8in1"						$(check_test "CARDREADER_SC8IN1") \
-		CARDREADER_MP35		"AD-Teknik MP 3.6/USB Phoenix"	$(check_test "CARDREADER_MP35") \
-		CARDREADER_SMARGO	"Argolis Smargo Smartreader"	$(check_test "CARDREADER_SMARGO") \
-		CARDREADER_DB2COM	"dbox2"							$(check_test "CARDREADER_DB2COM") \
-		CARDREADER_STAPI	"STAPI"							$(check_test "CARDREADER_STAPI") \
-		CARDREADER_STAPI5	"STAPI5"						$(check_test "CARDREADER_STAPI5") \
-		CARDREADER_STINGER	"STINGER"						$(check_test "CARDREADER_STINGER") \
-		CARDREADER_DRECAS	"DRECAS"						$(check_test "CARDREADER_DRECAS") \
+		CARDREADER_SC8IN1	"SC8in1"				$(check_test "CARDREADER_SC8IN1") \
+		CARDREADER_MP35	"AD-Teknik MP 3.6/USB Phoenix"	$(check_test "CARDREADER_MP35") \
+		CARDREADER_SMARGO	"Argolis Smargo Smartreader"		$(check_test "CARDREADER_SMARGO") \
+		CARDREADER_DB2COM	"dbox2"				$(check_test "CARDREADER_DB2COM") \
+		CARDREADER_STAPI	"STAPI"				$(check_test "CARDREADER_STAPI") \
+		CARDREADER_STAPI5	"STAPI5"			   	$(check_test "CARDREADER_STAPI5") \
+		CARDREADER_GXAPI	"GXAPI"				$(check_test "CARDREADER_GXAPI") \
+		CARDREADER_STINGER	"STINGER"			   	$(check_test "CARDREADER_STINGER") \
+		CARDREADER_DRECAS	"DRECAS"			   	$(check_test "CARDREADER_DRECAS") \
 	2> ${tempfile}
 
 	opt=${?}
@@ -607,8 +635,8 @@ config_dialog() {
 	fi
 
 	configfile=config.h
-	tempfile=$(mktemp -t oscam-config.dialog.XXXXXX) || exit 1
-	tempfileconfig=$(mktemp -t oscam-config.h.XXXXXX) || exit 1
+	tempfile=$(mktemp -t ncam-config.dialog.XXXXXX) || exit 1
+	tempfileconfig=$(mktemp -t ncam-config.h.XXXXXX) || exit 1
 	trap 'rm -f $tempfile $tempfileconfig $tempfileconfig.bak 2>/dev/null' INT TERM EXIT
 	cp -f $configfile $tempfileconfig
 
@@ -638,13 +666,12 @@ config_dialog() {
 				exit 0
 			;;
 		esac
-		cp -f $tempfileconfig $configfile
 	done
 }
 
 create_cert() {
 	# define certificate details
-	CERT_SUBJECT_DEFAULT="/CN=Private OSCam Self Signed Certificate"
+	CERT_SUBJECT_DEFAULT="/CN=Private NCam Self Signed Certificate"
 	CERT_DAYS=365
 
 	mkdir -p "$CERT_DIR"
@@ -748,9 +775,9 @@ cert_info() {
 		for attrib in 'Subject' 'Issuer' 'Not Before' 'Not After' 'Public Key Algorithm'\
 					'Public-Key' 'ASN1 OID' 'NIST CURVE' 'Exponent' 'Signature Algorithm'; do
 			if [ "$attrib" = 'Not Before' ]; then
-				openssl x509 -in "$CERT_DIR/$CERT_X509" -noout -nameopt oneline,-esc_msb -startdate | awk -F '=' '{print $2}' | $DATE +"%d.%m.%Y %H:%M:%S" -f - | xargs -0 printf "$attrib: %s" 2>/dev/null
+				openssl x509 -in "$CERT_DIR/$CERT_X509" -noout -nameopt oneline,-esc_msb -startdate | awk -F '=' '{print $2}' | date +"%d.%m.%Y %H:%M:%S" -f - | xargs -0 printf "$attrib: %s" 2>/dev/null
 			elif [ "$attrib" = 'Not After' ]; then
-				openssl x509 -in "$CERT_DIR/$CERT_X509" -noout -nameopt oneline,-esc_msb -enddate | awk -F '=' '{print $2}' | $DATE +"%d.%m.%Y %H:%M:%S" -f - | xargs -0 printf "$attrib: %s" 2>/dev/null
+				openssl x509 -in "$CERT_DIR/$CERT_X509" -noout -nameopt oneline,-esc_msb -enddate | awk -F '=' '{print $2}' | date +"%d.%m.%Y %H:%M:%S" -f - | xargs -0 printf "$attrib: %s" 2>/dev/null
 			else
 				openssl x509 -in "$CERT_DIR/$CERT_X509" -text -noout -nameopt oneline,-esc_msb | grep -m1 "$attrib" | xargs -0 printf "%s" | awk '{$1=$1};1'
 			fi
@@ -886,23 +913,37 @@ do
 		exit $?
 		;;
 	'-sm'|'--sign-marker')
-		obsm=`grep '^#define OBSM' oscam-signing.h | cut -d\" -f2`
+		obsm=`grep '^#define OBSM' ncam-signing.h | cut -d\" -f2`
 		echo $obsm
 		break
 	;;
 	'-um'|'--upx-marker')
-		upxm=`grep '^#define UPXM' oscam-signing.h | cut -d\" -f2`
+		upxm=`grep '^#define UPXM' ncam-signing.h | cut -d\" -f2`
 		echo $upxm
 		break
 	;;
-	'-v'|'--oscam-version')
-		version=`grep '^#define CS_VERSION' globals.h | cut -d\" -f2`
-		echo $version
+	'-v'|'--ncam-version')
+		grep CS_VERSION globals.h | cut -d\" -f2
 		break
 	;;
-	'-c'|'--oscam-commit')
-		sha=`git log 2>/dev/null | sed -n 1p | cut -d ' ' -f2 | cut -c1-8`
-		echo $sha
+	'--aio-version')
+		grep CS_AIO_VERSION globals.h | cut -d\" -f2
+		break
+	;;
+	'-r'|'--ncam-revision')
+		revision=$(git log 2>/dev/null | sed -n 1p | cut -d ' ' -f2 | cut -c1-7)
+		if [ -n "$revision" ]; then
+			revision="git${revision}"
+		else
+			revision=$(svn info 2>/dev/null | grep Revision | cut -d ' ' -f2)
+			[ -n "$revision" ] && revision="svn${revision}"
+		fi
+		if [ -n "$revision" ]; then
+			echo $revision > .revision
+		else
+			[ -f .revision ] && revision=$(cat .revision)
+		fi
+		echo $revision
 		break
 	;;
 	'-O'|'--detect-osx-sdk-version')

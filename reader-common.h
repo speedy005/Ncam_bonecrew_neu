@@ -7,8 +7,8 @@
 #define ERROR   0
 
 #include "csctapi/atr.h"
-#include "oscam-string.h"
-#include "oscam-reader.h"
+#include "ncam-string.h"
+#include "ncam-reader.h"
 
 int32_t reader_cmd2icc(struct s_reader *reader, const uint8_t *buf, const int32_t l, uint8_t *response, uint16_t *response_length);
 int32_t card_write(struct s_reader *reader, const uint8_t *, const uint8_t *, uint8_t *, uint16_t *);
@@ -49,11 +49,13 @@ void cardreader_reset(struct s_client *cl);
 int32_t cardreader_do_checkhealth(struct s_reader *reader);
 void cardreader_checkhealth(struct s_client *cl, struct s_reader *rdr);
 int32_t cardreader_do_emm(struct s_reader *reader, EMM_PACKET *ep);
+#if defined(WITH_SENDCMD) && defined(READER_VIDEOGUARD)
 int32_t cardreader_do_rawcmd(struct s_reader *reader, CMD_PACKET *cp);
+#endif
 void cardreader_process_ecm(struct s_reader *reader, struct s_client *cl, ECM_REQUEST *er);
 void cardreader_get_card_info(struct s_reader *reader);
 void cardreader_poll_status(struct s_reader *reader);
-int32_t check_sct_len(const uint8_t *data, int32_t off);
+int32_t check_sct_len(const uint8_t *data, int32_t off, int32_t maxSize);
 #else
 static inline void cardreader_init_locks(void) { }
 static inline bool cardreader_init(struct s_reader *UNUSED(reader))

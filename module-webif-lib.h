@@ -30,10 +30,12 @@
 #define AUTHNONCEHASHBUCKETS 4
 /* The maximum amount of GET parameters the webserver will parse. */
 #define MAXGETPARAMS 300
-/* The refresh delay (in seconds) when stopping OSCam via http. */
+/* The refresh delay (in seconds) when stopping NCam via http. */
 #define SHUTDOWNREFRESH 30
 /* The expiry of the certificate; 365 days */
 #define CERT_EXPIRY_TIME (60*60*24*365)
+
+#define TOUCH_SUBDIR "touch/"
 
 struct s_connection
 {
@@ -107,7 +109,7 @@ extern void send_file(FILE *f, char *filename, char *subdir, time_t modifiedhead
 extern void urldecode(char *s);
 extern void parseParams(struct uriparams *params, char *pch);
 extern char *getParam(struct uriparams *params, char *name);
-extern int32_t oscam_get_uptime(void);
+extern int32_t ncam_get_uptime(void);
 extern int8_t get_stats_linux(const pid_t pid, struct pstat* result);
 extern void calc_cpu_usage_pct(struct pstat* cur_usage, struct pstat* last_usage);
 

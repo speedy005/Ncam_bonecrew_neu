@@ -7,15 +7,15 @@
 #include "module-cacheex.h"
 #include "module-camd35.h"
 #include "module-camd35-cacheex.h"
-#include "oscam-aes.h"
-#include "oscam-chk.h"
-#include "oscam-cache.h"
-#include "oscam-client.h"
-#include "oscam-ecm.h"
-#include "oscam-emm.h"
-#include "oscam-net.h"
-#include "oscam-string.h"
-#include "oscam-reader.h"
+#include "ncam-aes.h"
+#include "ncam-chk.h"
+#include "ncam-cache.h"
+#include "ncam-client.h"
+#include "ncam-ecm.h"
+#include "ncam-emm.h"
+#include "ncam-net.h"
+#include "ncam-string.h"
+#include "ncam-reader.h"
 
 //CMD00 - ECM (request)
 //CMD01 - ECM (response)
@@ -26,7 +26,7 @@
 //CMD06 - EMM (incomming EMM in server mode)
 //CMD19 - EMM (incomming EMM in server mode) only seen with caid 0x1830
 //CMD08 - Stop sending requests to the server for current srvid, prvid, caid
-//CMD44 - MPCS/OScam internal error notification
+//CMD44 - MPCS/NCam internal error notification
 //CMD55 - connect_on_init/keepalive
 
 //CMD0x3c - CACHEEX Cache-push filter request
@@ -515,7 +515,7 @@ static void camd35_request_emm(ECM_REQUEST *er)
 
 	// Bulcrypt has two caids and aureader->caid can't be used.
 	// Use ECM_REQUEST caid for AU.
-	if(!au_caid && caid_is_bulcrypt(er->caid))
+	if(!au_caid && (caid_is_bulcrypt(er->caid) || caid_is_streamguard(er->caid) || caid_is_tongfang(er->caid) || caid_is_dvn(er->caid)))
 	{
 		au_caid = er->caid;
 	}
@@ -671,7 +671,7 @@ static void camd35_send_dcw(struct s_client *client, ECM_REQUEST *er)
 		else
 		{
 			// Send old CMD44 to prevent cascading
-			// problems with older mpcs/oscam versions
+			// problems with older mpcs/ncam versions
 			buf[0] = 0x44;
 			buf[1] = 0;
 		}
@@ -679,6 +679,7 @@ static void camd35_send_dcw(struct s_client *client, ECM_REQUEST *er)
 
 	camd35_send(client, buf, 0);
 	camd35_request_emm(er);
+	NULLFREE(er->src_data);
 }
 
 static void camd35_process_ecm(uint8_t *buf, int buflen)

@@ -4,16 +4,32 @@
 
 #ifdef MODULE_STREAMRELAY
 
-#if !STATIC_LIBDVBCSA
+#include "module-streamrelay.h"
+#include "ncam-chk.h"
+#include "ncam-client.h"
+#include "ncam-config.h"
+#include "ncam-net.h"
+#include "ncam-string.h"
+#include "ncam-time.h"
+
+#ifndef DVBCSA_KEY_ECM
+#define DVBCSA_KEY_ECM 0
+#endif
+
+#ifndef STATIC_LIBDVBCSA
 #include <dlfcn.h>
 #endif
-#include "module-streamrelay.h"
-#include "oscam-chk.h"
-#include "oscam-client.h"
-#include "oscam-config.h"
-#include "oscam-net.h"
-#include "oscam-string.h"
-#include "oscam-time.h"
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wredundant-decls"
+void dvbcsa_bs_key_set_ecm(const unsigned char ecm, const dvbcsa_cw_t cw, struct dvbcsa_bs_key_s *key) __attribute__((weak));
+#pragma GCC diagnostic pop
+
+#ifdef WITH_EMU
+#include "cscrypt/des.h"
+#include "module-emulator-nemu.h"
+#include "module-emulator-powervu.h"
+#endif
 
 #define STREAM_UNDEFINED 0x00
 #define STREAM_VIDEO     0x01
@@ -27,24 +43,34 @@ typedef struct
 {
 	int32_t connfd;
 	int32_t connid;
-	char stream_host[256];
 } stream_client_conn_data;
 
-char *stream_source_auth = NULL;
-uint32_t cluster_size = 50;
-bool has_dvbcsa_ecm = 0, is_dvbcsa_static = 1;
+static char stream_source_host[256];
+static char *stream_source_auth = NULL;
+static uint32_t cluster_size = 50;
+static bool has_dvbcsa_ecm = 0;
 
 static uint8_t stream_server_mutex_init = 0;
 static pthread_mutex_t stream_server_mutex;
-static int32_t glistenfd, mod_idx, gconncount = 0, gconnfd[STREAM_SERVER_MAX_CONNECTIONS], stream_resptime[STREAM_SERVER_MAX_CONNECTIONS];
-static char ecm_src[STREAM_SERVER_MAX_CONNECTIONS][9];
-static IN_ADDR_T client_ip[STREAM_SERVER_MAX_CONNECTIONS], stream_host_ip[STREAM_SERVER_MAX_CONNECTIONS];
-static in_port_t client_port[STREAM_SERVER_MAX_CONNECTIONS];
-struct s_client *streamrelay_client[STREAM_SERVER_MAX_CONNECTIONS];
+static int32_t glistenfd, gconncount = 0, gconnfd[STREAM_SERVER_MAX_CONNECTIONS];
+#ifdef WITH_EMU
+#define STATIC /* none */
+#else
+#define STATIC static
+#endif
+STATIC pthread_mutex_t fixed_key_srvid_mutex;
+STATIC uint16_t stream_cur_srvid[STREAM_SERVER_MAX_CONNECTIONS];
+STATIC stream_client_key_data key_data[STREAM_SERVER_MAX_CONNECTIONS];
 
-static pthread_mutex_t fixed_key_srvid_mutex;
-static uint16_t stream_cur_srvid[STREAM_SERVER_MAX_CONNECTIONS];
-static stream_client_key_data key_data[STREAM_SERVER_MAX_CONNECTIONS];
+#ifdef WITH_EMU
+int8_t stream_server_thread_init = 0;
+int8_t emu_stream_emm_enabled = 0;
+uint8_t emu_stream_server_mutex_init = 0;
+int8_t stream_server_has_ecm[EMU_STREAM_SERVER_MAX_CONNECTIONS];
+pthread_mutex_t emu_fixed_key_data_mutex[EMU_STREAM_SERVER_MAX_CONNECTIONS];
+emu_stream_client_key_data emu_fixed_key_data[EMU_STREAM_SERVER_MAX_CONNECTIONS];
+LLIST *ll_emu_stream_delayed_keys[EMU_STREAM_SERVER_MAX_CONNECTIONS];
+#endif
 
 #ifdef MODULE_RADEGAST
 static int32_t gRadegastFd = 0;
@@ -88,7 +114,7 @@ static bool send_to_radegast(uint8_t* data, int len)
 {
 	if (send(gRadegastFd, data, len, 0) < 0)
 	{
-		cs_log("send_to_radegast: Send failure! (errno=%d %s)", errno, strerror(errno));
+		cs_log("send_to_radegast: Send failure");
 		return false;
 	}
 	return true;
@@ -108,10 +134,7 @@ static void radegast_client_ecm(stream_client_data *cdata)
 	static uint8_t payload_static_len = 12;
 
 	if (gRadegastFd <= 0)
-	{
-		cs_log("HTTP stream including ECM header. Connecting radegast server to parse ECM data");
-		connect_to_radegast();
-	}
+		{ connect_to_radegast(); }
 
 	packet_len = header_len + payload_static_len + section_length;
 	uint8_t outgoing_data[packet_len];
@@ -139,10 +162,13 @@ static void radegast_client_ecm(stream_client_data *cdata)
 		}
 	}
 }
+#endif // MODULE_RADEGAST
 
+#ifdef WITH_EMU
 void ParseEcmData(stream_client_data *cdata)
 {
 	uint8_t *data = cdata->ecm_data;
+	uint8_t dcw[16];
 	uint16_t section_length = SCT_LEN(data);
 
 	if (section_length < 11)
@@ -150,21 +176,46 @@ void ParseEcmData(stream_client_data *cdata)
 		return;
 	}
 
-	cs_strncpy(ecm_src[cdata->connid], "radegast", sizeof(ecm_src[cdata->connid]));
-	radegast_client_ecm(cdata);
+	if (caid_is_powervu(cdata->caid))
+	{
+		if (data[11] > cdata->ecm_nb || (cdata->ecm_nb == 255 && data[11] == 0) || ((cdata->ecm_nb - data[11]) > 5))
+		{
+			cdata->ecm_nb = data[11];
+			cdata->key.connid = cdata->connid;
+			powervu_ecm(data, dcw, NULL, cdata->srvid, cdata->caid, cdata->tsid, cdata->onid, cdata->ens, &cdata->key);
+		}
+	}
+#ifdef MODULE_RADEGAST
+	else
+	{
+		radegast_client_ecm(cdata);
+	}
+#endif
 }
-#endif // MODULE_RADEGAST
+#else
+#define ParseEcmData radegast_client_ecm
+#endif
 
 static void write_cw(ECM_REQUEST *er, int32_t connid)
 {
-#if DVBCSA_KEY_ECM
 	const uint8_t ecm = (caid_is_videoguard(er->caid) && (er->ecm[4] != 0 && (er->ecm[2] - er->ecm[4]) == 4)) ? 4 : 0;
-#endif
 	if (memcmp(er->cw, "\x00\x00\x00\x00\x00\x00\x00\x00", 8) != 0)
 	{
 		if (has_dvbcsa_ecm)
 		{
-			dvbcsa_bs_key_set(er->cw, key_data[connid].key[EVEN]);
+			dvbcsa_bs_key_set_ecm(ecm, er->cw, key_data[connid].key
+#ifdef WITH_EMU
+			[0]
+#endif
+			[EVEN]);
+		}
+		else
+		{
+			dvbcsa_bs_key_set(er->cw, key_data[connid].key
+#ifdef WITH_EMU
+			[0]
+#endif
+			[EVEN]);
 		}
 	}
 
@@ -172,57 +223,44 @@ static void write_cw(ECM_REQUEST *er, int32_t connid)
 	{
 		if (has_dvbcsa_ecm)
 		{
-			dvbcsa_bs_key_set(er->cw + 8, key_data[connid].key[ODD]);
+			dvbcsa_bs_key_set_ecm(ecm, er->cw + 8, key_data[connid].key
+#ifdef WITH_EMU
+			[0]
+#endif
+			[ODD]);
+		}
+		else
+		{
+			dvbcsa_bs_key_set(er->cw + 8, key_data[connid].key
+#ifdef WITH_EMU
+			[0]
+#endif
+			[ODD]);
 		}
 	}
-}
-
-static void update_client_info(ECM_REQUEST *er, int32_t connid)
-{
-	time_t now;
-	time(&now);
-	if(cfg.stream_display_client)
-	{
-		streamrelay_client[connid]->ip = stream_host_ip[connid];
-		streamrelay_client[connid]->port = cfg.stream_source_port;
-	}
-	else
-	{
-		streamrelay_client[connid]->ip = client_ip[connid];
-		streamrelay_client[connid]->port = client_port[connid];
-	}
-	streamrelay_client[connid]->last_srvid = er->srvid;
-	streamrelay_client[connid]->last_provid = er->prid;
-	streamrelay_client[connid]->last_caid = er->caid;
-#ifdef WEBIF
-	snprintf(streamrelay_client[connid]->lastreader, sizeof(streamrelay_client[connid]->lastreader), "⇆ %.*s", 11, ecm_src[connid]);
+#ifdef WITH_EMU
+	SAFE_MUTEX_LOCK(&emu_fixed_key_data_mutex[connid]);
+	emu_fixed_key_data[connid].csa_used = 1;
+	SAFE_MUTEX_UNLOCK(&emu_fixed_key_data_mutex[connid]);
 #endif
-	streamrelay_client[connid]->cwlastresptime = stream_resptime[connid];
-	streamrelay_client[connid]->lastecm = now;
-	streamrelay_client[connid]->lastswitch = streamrelay_client[connid]->last = time((time_t *)0); // reset idle-Time & last switch
 }
 
 bool stream_write_cw(ECM_REQUEST *er)
 {
 	int32_t i;
-	if (er->rc == E_FOUND)
+	bool cw_written = false;
+	//SAFE_MUTEX_LOCK(&fixed_key_srvid_mutex);
+	for (i = 0; i < STREAM_SERVER_MAX_CONNECTIONS; i++)
 	{
-		bool cw_written = false;
-		//SAFE_MUTEX_LOCK(&fixed_key_srvid_mutex);
-		for (i = 0; i < STREAM_SERVER_MAX_CONNECTIONS; i++)
+		if (stream_cur_srvid[i] == er->srvid)
 		{
-			if (stream_cur_srvid[i] == er->srvid)
-			{
-				write_cw(er, i);
-				update_client_info(er, i);
-				cw_written = true;
-				// don't return as there might be more connections for the same channel (e.g. recordings)
-			}
+			write_cw(er, i);
+			cw_written = true;
+			// don't return as there might be more connections for the same channel (e.g. recordings)
 		}
-		//SAFE_MUTEX_UNLOCK(&fixed_key_srvid_mutex);
-		return cw_written;
 	}
-	return true;
+	//SAFE_MUTEX_UNLOCK(&fixed_key_srvid_mutex);
+	return cw_written;
 }
 
 static void SearchTsPackets(const uint8_t *buf, const uint32_t bufLength, uint16_t *packetSize, uint16_t *startOffset)
@@ -370,6 +408,9 @@ static void ParsePatData(stream_client_data *cdata)
 {
 	int32_t i;
 	uint16_t srvid;
+#ifdef __BISS__
+	cdata->STREAMpidcount = 0;
+#endif
 	for (i = 8; i + 7 < SCT_LEN(cdata->pat_data); i += 4)
 	{
 		srvid = b2i(2, cdata->pat_data + i);
@@ -387,6 +428,21 @@ static void ParsePatData(stream_client_data *cdata)
 		}
 	}
 }
+
+#ifdef WITH_EMU
+static int8_t stream_client_get_caid(stream_client_data *cdata)
+{
+	uint32_t tmp1 = (cdata->srvid << 16) | cdata->pmt_pid;
+	uint8_t tmp2[2];
+
+	if (emu_find_key('A', tmp1, 0, "FAKE", tmp2, 2, 0, 0, 0, NULL))
+	{
+		cdata->caid = b2i(2, tmp2);
+		return 1;
+	}
+	return 0;
+}
+#endif
 
 static void ParseDescriptors(const uint8_t *buffer, const uint16_t info_length, uint8_t *type)
 {
@@ -515,8 +571,8 @@ static void stream_parse_pmt_ca_descriptor(const uint8_t *data, const int32_t da
 				}
 				cdata->ecm_pid = b2i(2, data + i + 4 + data_pos) & 0x1FFF;
 				cs_log_dbg(D_READER, "Stream client %i found ecm pid: 0x%04X (%i)",
-							cdata->connid, cdata->ecm_pid, cdata->ecm_pid);
-			}
+							cdata->connid, cdata->ecm_pid, cdata->ecm_pid);	
+			}	
 		}
 	}
 }
@@ -563,6 +619,9 @@ static void ParsePmtData(stream_client_data *cdata)
 			case 0xD1:
 			case 0xEA:
 			{
+#ifdef WITH_EMU
+				cdata->video_pid = elementary_pid;
+#endif
 				cs_log_dbg(D_READER, "Stream client %i found video pid: 0x%04X (%i)",
 							cdata->connid, elementary_pid, elementary_pid);
 				stream_parse_pmt_ca_descriptor(cdata->pmt_data, i, 5, es_info_length, cdata);
@@ -577,6 +636,15 @@ static void ParsePmtData(stream_client_data *cdata)
 			case 0x2E:
 			case 0x81:
 			{
+#ifdef WITH_EMU
+				if (cdata->audio_pid_count >= EMU_STREAM_MAX_AUDIO_SUB_TRACKS)
+				{
+					continue;
+				}
+
+				cdata->audio_pids[cdata->audio_pid_count] = elementary_pid;
+				cdata->audio_pid_count++;
+#endif
 				cs_log_dbg(D_READER, "Stream client %i found audio pid: 0x%04X (%i)",
 							cdata->connid, elementary_pid, elementary_pid);
 				break;
@@ -589,19 +657,87 @@ static void ParsePmtData(stream_client_data *cdata)
 				ParseDescriptors(cdata->pmt_data + i + 5, es_info_length, &type);
 				if (type == STREAM_AUDIO)
 				{
+#ifdef WITH_EMU
+					if (cdata->audio_pid_count >= EMU_STREAM_MAX_AUDIO_SUB_TRACKS)
+					{
+						continue;
+					}
+
+					cdata->audio_pids[cdata->audio_pid_count] = elementary_pid;
+					cdata->audio_pid_count++;
+#endif
 					cs_log_dbg(D_READER, "Stream client %i found audio pid: 0x%04X (%i)",
 								cdata->connid, elementary_pid, elementary_pid);
 				}
 				else if (type == STREAM_TELETEXT)
 				{
+#ifdef WITH_EMU
+					cdata->teletext_pid = elementary_pid;
+#endif
 					cs_log_dbg(D_READER, "Stream client %i found teletext pid: 0x%04X (%i)",
 								cdata->connid, elementary_pid, elementary_pid);
 				}
 				break;
 			}
 		}
+#ifdef __BISS__
+		cdata->STREAMpids[cdata->STREAMpidcount] = elementary_pid;
+		cdata->STREAMpidcount++;
+#endif
+	}
+#ifdef WITH_EMU
+	// If we haven't found a CAID for this service,
+	// search the keyDB for a fake one
+	if (cdata->caid == NO_CAID_VALUE && stream_client_get_caid(cdata) == 1)
+	{
+		cs_log_dbg(D_READER, "Stream client %i found fake caid: 0x%04X (%i)",
+					cdata->connid, cdata->caid, cdata->caid);
+	}
+#endif
+}
+
+#ifdef WITH_EMU
+static void ParseCatData(stream_client_data *cdata)
+{
+	uint8_t *data = cdata->cat_data;
+	uint32_t i;
+
+	for (i = 8; i < (b2i(2, data + 1) & 0xFFF) - 1; i += data[i + 1] + 2)
+	{
+		if (data[i] != 0x09)
+		{
+			continue;
+		}
+
+		uint16_t caid = b2i(2, data + i + 2);
+
+		if (caid_is_powervu(caid)) // add all supported caids here
+		{
+			if (cdata->caid == NO_CAID_VALUE)
+			{
+				cdata->caid = caid;
+			}
+			cdata->emm_pid = b2i(2, data + i + 4) & 0x1FFF;;
+			cs_log_dbg(D_READER, "Stream client %i found emm pid: 0x%04X (%i)",
+						cdata->connid, cdata->emm_pid, cdata->emm_pid);
+			break;
+		}
 	}
 }
+
+static void ParseEmmData(stream_client_data *cdata)
+{
+	uint32_t keysAdded = 0;
+
+	emu_process_emm(NULL, cdata->caid, cdata->emm_data, &keysAdded);
+
+	if (keysAdded)
+	{
+		//refresh_entitlements(rdr);
+		cs_log("Stream client %i found %i keys", cdata->connid, keysAdded);
+	}
+}
+#endif
 
 static void ParseTsPackets(stream_client_data *data, uint8_t *stream_buf, uint32_t bufLength, uint16_t packetSize)
 {
@@ -651,7 +787,11 @@ static void ParseTsPackets(stream_client_data *data, uint8_t *stream_buf, uint32
 	}
 }
 
-static void decrypt(struct dvbcsa_bs_batch_s *tsbbatch, uint16_t fill[2], const uint8_t oddeven, const int32_t connid)
+static void decrypt_csa(struct dvbcsa_bs_batch_s *tsbbatch, uint16_t fill[2], const uint8_t oddeven, const int32_t connid
+#ifdef WITH_EMU
+	, uint8_t cw_type
+#endif
+)
 {
 	if (fill[oddeven] > 0)
 	{
@@ -665,14 +805,535 @@ static void decrypt(struct dvbcsa_bs_batch_s *tsbbatch, uint16_t fill[2], const 
 #else
 		tsbbatch[fill[oddeven]].data = NULL;
 #endif
-		cs_log_dbg(D_READER, "dvbcsa (%s), batch=%d", oddeven == ODD ? "odd" : "even", fill[oddeven]);
+		//cs_log_dbg(D_READER, "dvbcsa (%s), batch=%d", oddeven == ODD ? "odd" : "even", fill[oddeven]);
 
 		fill[oddeven] = 0;
 
-		dvbcsa_bs_decrypt(key_data[connid].key[oddeven], tsbbatch, 184);
+		dvbcsa_bs_decrypt(key_data[connid].key
+#ifdef WITH_EMU
+				[cw_type]
+#endif
+				[oddeven], tsbbatch, 184);
 	}
 }
-#define decrypt(a) decrypt(tsbbatch, fill, a, data->connid)
+#ifndef WITH_EMU
+#define decrypt(a) decrypt_csa(tsbbatch, fill, a, data->connid)
+#else // multiple cw
+#define decrypt(a) decrypt_csa(tsbbatch, fill, a, data->connid, 0)
+#define decrypt_pvu(a, b) decrypt_csa(tsbbatch, fill, a, data->connid, b)
+#endif
+
+#ifdef WITH_EMU
+static void DescrambleTsPacketsPowervu(stream_client_data *data, uint8_t *stream_buf, uint32_t bufLength, uint16_t packetSize, struct dvbcsa_bs_batch_s *tsbbatch)
+{
+	uint32_t i, j, tsHeader, *deskey;
+	uint16_t pid, offset, fill[2] = {0,0};
+	uint8_t *pdata, payloadStart, oddeven = 0, cw_type = 0;
+	int8_t oddKeyUsed;
+
+	for (i = 0; i < bufLength; i += packetSize)
+	{
+		tsHeader = b2i(4, stream_buf + i);
+		pid = (tsHeader & 0x1FFF00) >> 8;
+		payloadStart = (tsHeader & 0x400000) >> 22;
+		offset = (tsHeader & 0x20) ? 4 + stream_buf[i + 4] + 1 : 4;
+
+		if (packetSize - offset < 1)
+		{
+			continue;
+		}
+
+		if (emu_stream_emm_enabled && pid == 0x0001 && data->have_cat_data != 1) // Search the CAT for EMM pids
+		{
+			// set to null pid
+			stream_buf[i + 1] |= 0x1F;
+			stream_buf[i + 2] = 0xFF;
+
+			ParseTsData(0x01, 0xFF, 8, &data->have_cat_data, data->cat_data, sizeof(data->cat_data),
+						&data->cat_data_pos, payloadStart, stream_buf + i + offset, packetSize - offset, ParseCatData, data);
+			continue;
+		}
+
+		if (emu_stream_emm_enabled && data->emm_pid && pid == data->emm_pid) // Process the EMM data
+		{
+			// set to null pid
+			stream_buf[i + 1] |= 0x1F;
+			stream_buf[i + 2] = 0xFF;
+
+			ParseTsData(0x80, 0xF0, 3, &data->have_emm_data, data->emm_data, sizeof(data->emm_data),
+						&data->emm_data_pos, payloadStart, stream_buf + i + offset, packetSize - offset, ParseEmmData, data);
+			continue;
+		}
+
+		if (data->ecm_pid && pid == data->ecm_pid) // Process the ECM data
+		{
+			stream_server_has_ecm[data->connid] = 1;
+			// set to null pid
+			stream_buf[i + 1] |= 0x1F;
+			stream_buf[i + 2] = 0xFF;
+			ParseTsData(0x80, 0xFE, 3, &data->have_ecm_data, data->ecm_data, sizeof(data->ecm_data),
+						&data->ecm_data_pos, payloadStart, stream_buf + i + offset, packetSize - offset, ParseEcmData, data);
+			continue;
+		}
+
+		if ((tsHeader & 0xC0) == 0)
+		{
+			continue;
+		}
+
+		if (data->key.csa_used)
+		{
+			stream_buf[i + 3] &= 0x3f; // consider it decrypted now
+			oddeven = (tsHeader & 0xC0) == 0xC0 ? ODD: EVEN;
+			decrypt_pvu(oddeven == ODD ? EVEN : ODD, cw_type);
+
+			if (pid == data->video_pid) // start with video pid, since it is most dominant
+			{
+				cw_type = PVU_CW_VID;
+				tsbbatch[fill[oddeven]].data = &stream_buf[i + offset];
+				tsbbatch[fill[oddeven]].len = packetSize - offset;
+				fill[oddeven]++;
+				if (fill[oddeven] > cluster_size - 1)
+				{
+					decrypt_pvu(oddeven, cw_type);
+				}
+			}
+			else
+			{
+				if (cw_type != PVU_CW_VID)
+				{
+					decrypt_pvu(oddeven, PVU_CW_VID);
+				}
+				for (j = 0; j < data->audio_pid_count; j++)
+				{
+					if (pid == data->audio_pids[j])
+					{
+						if (cw_type != PVU_CW_A1 + j)
+						{
+							decrypt_pvu(oddeven, PVU_CW_A1 + j);
+						}
+						cw_type = PVU_CW_A1 + j;
+						tsbbatch[fill[oddeven]].data = &stream_buf[i + offset];
+						tsbbatch[fill[oddeven]].len = packetSize - offset;
+						fill[oddeven]++;
+						if (fill[oddeven] > cluster_size - 1)
+						{
+							decrypt_pvu(oddeven, cw_type);
+						}
+					}
+				}
+			}
+		}
+		else
+		{
+			oddKeyUsed = (tsHeader & 0xC0) == 0xC0 ? 1 : 0;
+			deskey = NULL;
+
+			if (pid == data->video_pid)
+			{
+				deskey = data->key.pvu_des_ks[PVU_CW_VID][oddKeyUsed];
+			}
+			else
+			{
+				for (j = 0; j < data->audio_pid_count; j++)
+				{
+					if (pid == data->audio_pids[j])
+					{
+						deskey = data->key.pvu_des_ks[PVU_CW_A1 + j][oddKeyUsed];
+					}
+				}
+			}
+
+			if (deskey == NULL)
+			{
+				deskey = data->key.pvu_des_ks[PVU_CW_HSD][oddKeyUsed];
+			}
+
+			for (j = offset; j + 7 < 188; j += 8)
+			{
+				pdata = stream_buf + i + j;
+				des(pdata, deskey, 0);
+			}
+
+			stream_buf[i + 3] &= 0x3F;
+		}
+	}
+	if (data->key.csa_used) { decrypt_pvu(oddeven, cw_type); }
+}
+static void DescrambleTsPacketsRosscrypt1(emu_stream_client_data *data, uint8_t *stream_buf, uint32_t bufLength, uint16_t packetSize)
+{
+	int8_t is_av_pid;
+	int32_t j;
+
+	uint8_t scramblingControl;
+	uint16_t pid, offset;
+	uint32_t i, tsHeader;
+
+	for (i = 0; i < bufLength; i += packetSize)
+	{
+		tsHeader = b2i(4, stream_buf + i);
+		pid = (tsHeader & 0x1FFF00) >> 8;
+		scramblingControl = tsHeader & 0xC0;
+
+		if (tsHeader & 0x20)
+		{
+			offset = 4 + stream_buf[i + 4] + 1;
+		}
+		else
+		{
+			offset = 4;
+		}
+
+		if (packetSize - offset < 1)
+		{
+			continue;
+		}
+
+		if (scramblingControl == 0)
+		{
+			continue;
+		}
+
+		if (!(stream_buf[i + 3] & 0x10))
+		{
+			stream_buf[i + 3] &= 0x3F;
+			continue;
+		}
+
+		is_av_pid = 0;
+
+		if (pid == data->video_pid)
+		{
+			is_av_pid = 1;
+		}
+		else
+		{
+			for (j = 0; j < data->audio_pid_count; j++)
+			{
+				if (pid == data->audio_pids[j])
+				{
+					is_av_pid = 1;
+					break;
+				}
+			}
+		}
+
+		if (is_av_pid)
+		{
+			static uint8_t dyn_key[184];
+			static uint8_t last_packet[184];
+
+			// Reset key on channel change
+			if (data->reset_key_data == 1)
+			{
+				memset(dyn_key, 0x00, 184);
+				memset(last_packet, 0x00, 184);
+				data->reset_key_data = 0;
+			}
+
+			if (memcmp(last_packet, stream_buf + i + 4, 184) == 0)
+			{
+				if (memcmp(dyn_key, stream_buf + i + 4, 184) != 0)
+				{
+					memcpy(dyn_key, stream_buf + i + 4, 184);
+				}
+			}
+			else
+			{
+				memcpy(last_packet, stream_buf + i + 4, 184);
+			}
+
+			for (j = 0; j < 184; j++)
+			{
+				stream_buf[i + 4 + j] ^= dyn_key[j];
+			}
+
+			stream_buf[i + 3] &= 0x3F;
+		}
+	}
+}
+
+static void DescrambleTsPacketsCompel(emu_stream_client_data *data, uint8_t *stream_buf, uint32_t bufLength, uint16_t packetSize)
+{
+	int8_t is_pes_pid; // any PES pid
+	int32_t j;
+	const int8_t limit = 4;
+
+	uint8_t scramblingControl;
+	uint16_t pid, offset;
+	uint32_t i, tsHeader;
+
+	for (i = 0; i < bufLength; i += packetSize)
+	{
+		tsHeader = b2i(4, stream_buf + i);
+		pid = (tsHeader & 0x1FFF00) >> 8;
+		scramblingControl = tsHeader & 0xC0;
+
+		if (tsHeader & 0x20)
+		{
+			offset = 4 + stream_buf[i + 4] + 1;
+		}
+		else
+		{
+			offset = 4;
+		}
+
+		if (packetSize - offset < 1)
+		{
+			continue;
+		}
+
+		if (scramblingControl == 0)
+		{
+			continue;
+		}
+
+		if (!(stream_buf[i + 3] & 0x10))
+		{
+			stream_buf[i + 3] &= 0x3F;
+			continue;
+		}
+
+		is_pes_pid = 0;
+
+		if (pid == data->video_pid)
+		{
+			is_pes_pid = 1;
+		}
+		else if (pid == data->teletext_pid)
+		{
+			is_pes_pid = 1;
+		}
+		else
+		{
+			for (j = 0; j < data->audio_pid_count; j++)
+			{
+				if (pid == data->audio_pids[j])
+				{
+					is_pes_pid = 1;
+					break;
+				}
+			}
+		}
+
+		if (is_pes_pid)
+		{
+			static uint8_t dyn_key[184];
+			static uint8_t found_key_bytes[184];
+			static uint8_t found_key_bytes_count = 8;
+			static uint8_t lastScramblingControl = 0xFF;
+
+			int8_t matches00 = 0;
+			int8_t matchesFF = 0;
+			int8_t last00_was_good = 0;
+			int8_t lastFF_was_good = 0;
+
+			// Reset key when scrambling control changes from odd to even
+			// and vice versa (every ~53 seconds) or when we change channel
+			if (lastScramblingControl != scramblingControl)
+			{
+				memset(dyn_key, 0x00, 184);
+				memset(found_key_bytes, 0, 184);
+				found_key_bytes_count = 8;
+				lastScramblingControl = scramblingControl;
+
+				//cs_log_dbg(D_READER, "resetting key data (scrambling control: %02X)", scramblingControl);
+			}
+
+			for (j = 8; j < 184; j++)
+			{
+				if (found_key_bytes_count == 184)
+				{
+					break;
+				}
+
+				if (stream_buf[i + 4 + j] == 0x00)
+				{
+					last00_was_good = 1;
+					matches00++;
+
+					if (matches00 > limit && found_key_bytes[j] == 0)
+					{
+						dyn_key[j] = 0x00;
+						found_key_bytes[j] = 1;
+						found_key_bytes_count++;
+					}
+				}
+				else if (stream_buf[i + 4 + j] == 0x3F)
+				{
+					last00_was_good = 1;
+					matches00++;
+
+					if (matches00 > limit && found_key_bytes[j] == 0)
+					{
+						dyn_key[j] = 0x3F;
+						found_key_bytes[j] = 1;
+						found_key_bytes_count++;
+					}
+				}
+				else
+				{
+					if (last00_was_good == 1)
+					{
+						last00_was_good = 0;
+						matches00--;
+					}
+					else
+					{
+						matches00 -= 2;
+					}
+
+					if (matches00 < 0)
+					{
+						matches00 = 0;
+					}
+				}
+
+				if (stream_buf[i + 4 + j] == 0xC0)
+				{
+					lastFF_was_good = 1;
+					matchesFF++;
+
+					if (matchesFF > limit && found_key_bytes[j] == 0)
+					{
+						dyn_key[j] = 0x3F;
+						found_key_bytes[j] = 1;
+						found_key_bytes_count++;
+					}
+				}
+				else if (stream_buf[i + 4 + j] == 0xFF)
+				{
+					lastFF_was_good = 1;
+					matchesFF++;
+
+					if (matchesFF > limit && found_key_bytes[j] == 0)
+					{
+						dyn_key[j] = 0x00;
+						found_key_bytes[j] = 1;
+						found_key_bytes_count++;
+					}
+				}
+				else
+				{
+					if (lastFF_was_good == 1)
+					{
+						lastFF_was_good = 0;
+						matchesFF--;
+					}
+					else
+					{
+						matchesFF -= 2;
+					}
+
+					if (matchesFF < 0)
+					{
+						matchesFF = 0;
+					}
+				}
+			}
+
+			for (j = 183; j >= 8; j--)
+			{
+				if (found_key_bytes_count == 184)
+				{
+					break;
+				}
+
+				if (stream_buf[i + 4 + j] == 0x00)
+				{
+					last00_was_good = 1;
+					matches00++;
+
+					if (matches00 > limit && found_key_bytes[j] == 0)
+					{
+						dyn_key[j] = 0x00;
+						found_key_bytes[j] = 1;
+						found_key_bytes_count++;
+					}
+				}
+				else if (stream_buf[i + 4 + j] == 0x3F)
+				{
+					last00_was_good = 1;
+					matches00++;
+
+					if (matches00 > limit && found_key_bytes[j] == 0)
+					{
+						dyn_key[j] = 0x3F;
+						found_key_bytes[j] = 1;
+						found_key_bytes_count++;
+					}
+				}
+				else
+				{
+					if (last00_was_good == 1)
+					{
+						last00_was_good = 0;
+						matches00--;
+					}
+					else
+					{
+						matches00 -= 2;
+					}
+
+					if (matches00 < 0)
+					{
+						matches00 = 0;
+					}
+				}
+
+				if (stream_buf[i + 4 + j] == 0xC0)
+				{
+					lastFF_was_good = 1;
+					matchesFF++;
+
+					if (matchesFF > limit && found_key_bytes[j] == 0)
+					{
+						dyn_key[j] = 0x3F;
+						found_key_bytes[j] = 1;
+						found_key_bytes_count++;
+					}
+				}
+				else if (stream_buf[i + 4 + j] == 0xFF)
+				{
+					lastFF_was_good = 1;
+					matchesFF++;
+
+					if (matchesFF > limit && found_key_bytes[j] == 0)
+					{
+						dyn_key[j] = 0x00;
+						found_key_bytes[j] = 1;
+						found_key_bytes_count++;
+					}
+				}
+				else
+				{
+					if (lastFF_was_good == 1)
+					{
+						lastFF_was_good = 0;
+						matchesFF--;
+					}
+					else
+					{
+						matchesFF -= 2;
+					}
+
+					if (matchesFF < 0)
+					{
+						matchesFF = 0;
+					}
+				}
+			}
+
+			for (j = 8; j < 184; j++)
+			{
+				stream_buf[i + 4 + j] ^= dyn_key[j];
+			}
+		}
+
+		stream_buf[i + 3] &= 0x3F; // Clear scrambling bits
+	}
+}
+#endif // WITH_EMU
 
 static void DescrambleTsPackets(stream_client_data *data, uint8_t *stream_buf, uint32_t bufLength, uint16_t packetSize, struct dvbcsa_bs_batch_s *tsbbatch)
 {
@@ -697,6 +1358,31 @@ static void DescrambleTsPackets(stream_client_data *data, uint8_t *stream_buf, u
 			continue;
 		}
 #ifdef MODULE_RADEGAST
+#ifdef __BISS__
+		if(data->ecm_pid == 0x1FFF && caid_is_biss_fixed(data->caid))
+		{
+			uint32_t j, n; 
+			uint16_t ecm_len = 7;
+			data->ecm_data[0] = 0x80; // to pass the cache check it must be 0x80 or 0x81
+			data->ecm_data[1] = 0x00;
+			data->ecm_data[2] = 0x04;
+			i2b_buf(2, data->srvid, data->ecm_data + 3);
+			i2b_buf(2, data->pmt_pid, data->ecm_data + 5);
+			for(j = 0, n = 7; j < data->STREAMpidcount; j++, n += 2)
+			{
+				i2b_buf(2, data->STREAMpids[j], data->ecm_data + n);
+				data->ecm_data[2] += 2;
+				ecm_len += 2;
+			}
+			data->ens &= 0x0FFFFFFF; // clear top 4 bits (in case of DVB-T/C or garbage), prepare for flagging
+			data->ens |= 0xA0000000; // flag to emu: this is the namespace, not a pid
+			i2b_buf(2, data->tsid, data->ecm_data + ecm_len);     // place tsid after the last stream pid
+			i2b_buf(2, data->onid, data->ecm_data + ecm_len + 2); // place onid right after tsid
+			i2b_buf(4, data->ens, data->ecm_data + ecm_len + 4);  // place namespace at the end of the ecm
+			data->ecm_data[2] += 8;
+			ParseEcmData(data);
+		} else
+#endif // __BISS__
 		if (data->ecm_pid && pid == data->ecm_pid) // Process the ECM data
 		{
 			// set to null pid
@@ -728,12 +1414,12 @@ static void DescrambleTsPackets(stream_client_data *data, uint8_t *stream_buf, u
 	decrypt(oddeven);
 }
 
-static int32_t connect_to_stream(char *http_buf, int32_t http_buf_len, char *stream_path, char *stream_source_host, IN_ADDR_T *in_addr)
+static int32_t connect_to_stream(char *http_buf, int32_t http_buf_len, char *stream_path)
 {
 	struct SOCKADDR cservaddr;
-	struct utsname buffer; uname(&buffer);
+	IN_ADDR_T in_addr;
 
-	int32_t streamfd = socket(DEFAULT_AF, SOCK_STREAM, 0), status;
+	int32_t streamfd = socket(DEFAULT_AF, SOCK_STREAM, 0);
 	if (streamfd == -1) { return -1; }
 
 	struct timeval tv;
@@ -741,44 +1427,41 @@ static int32_t connect_to_stream(char *http_buf, int32_t http_buf_len, char *str
 	tv.tv_usec = 0;
 	if (setsockopt(streamfd, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv, sizeof tv))
 	{
-		cs_log("ERROR: setsockopt() failed for SO_RCVTIMEO!");
+		cs_log("ERROR: setsockopt() failed for SO_RCVTIMEO");
 		return -1;
 	}
 
 	bzero(&cservaddr, sizeof(cservaddr));
 	SIN_GET_FAMILY(cservaddr) = DEFAULT_AF;
 	SIN_GET_PORT(cservaddr) = htons(cfg.stream_source_port);
-	cs_resolve(stream_source_host, in_addr, NULL, NULL);
-	SIN_GET_ADDR(cservaddr) = *in_addr;
+	cs_resolve(stream_source_host, &in_addr, NULL, NULL);
+	SIN_GET_ADDR(cservaddr) = in_addr;
 
 	if (connect(streamfd, (struct sockaddr *)&cservaddr, sizeof(cservaddr)) == -1)
 	{
-		cs_log("WARNING: Connect to stream source port %d failed.", cfg.stream_source_port);
+		cs_log("WARNING: Connect to stream source port %d failed", cfg.stream_source_port);
 		return -1;
 	}
 
-	snprintf(http_buf, http_buf_len,
-			"GET %s HTTP/1.1\nHost: %s:%u\n"
-			"User-Agent: Mozilla/5.0 (%s %s %s; rv:133.0) Gecko/20100101 Firefox/133.0\n"
-			"Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\n"
-			"Accept-Language: en-US"
-			"%s%s\n"
-			"Connection: keep-alive\n\n",
-			stream_path,
-			cs_inet_ntoa(*in_addr),
-			cfg.stream_source_port,
-#if defined(__linux__)
-			"X11;", buffer.sysname, buffer.machine,
-#else
-			"Windows NT 10.0;", "Win64;", "x64",
-#endif
-			(stream_source_auth) ? "\nAuthorization: Basic " : "",
-			(stream_source_auth) ? stream_source_auth : "");
+	if (stream_source_auth)
+	{
+		snprintf(http_buf, http_buf_len, "GET %s HTTP/1.1\nHost: %s:%u\n"
+				"User-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64; rv:38.0) Gecko/20100101 Firefox/38.0\n"
+				"Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\n"
+				"Accept-Language: en-US\n"
+				"Authorization: Basic %s\n"
+				"Connection: keep-alive\n\n", stream_path, stream_source_host, cfg.stream_source_port, stream_source_auth);
+	}
+	else
+	{
+		snprintf(http_buf, http_buf_len, "GET %s HTTP/1.1\nHost: %s:%u\n"
+				"User-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64; rv:38.0) Gecko/20100101 Firefox/38.0\n"
+				"Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\n"
+				"Accept-Language: en-US\n"
+				"Connection: keep-alive\n\n", stream_path, stream_source_host, cfg.stream_source_port);
+	}
 
-	status = send(streamfd, http_buf, cs_strlen(http_buf), 0);
-	cs_log_dbg(D_CLIENT, "HTTP (send) (%i): %s", status, remove_newline_chars(http_buf));
-	if ( status == -1) { return -1; }
-
+	if (send(streamfd, http_buf, cs_strlen(http_buf), 0) == -1) { return -1; }
 	return streamfd;
 }
 
@@ -788,6 +1471,9 @@ static void stream_client_disconnect(stream_client_conn_data *conndata)
 
 	SAFE_MUTEX_LOCK(&fixed_key_srvid_mutex);
 	stream_cur_srvid[conndata->connid] = NO_SRVID_VALUE;
+#ifdef WITH_EMU
+	stream_server_has_ecm[conndata->connid] = 0;
+#endif
 	SAFE_MUTEX_UNLOCK(&fixed_key_srvid_mutex);
 
 	SAFE_MUTEX_LOCK(&stream_server_mutex);
@@ -804,64 +1490,9 @@ static void stream_client_disconnect(stream_client_conn_data *conndata)
 	shutdown(conndata->connfd, 2);
 	close(conndata->connfd);
 
-	cs_log("Stream client %i disconnected. ip=%s port=%d", conndata->connid, cs_inet_ntoa(client_ip[conndata->connid]), client_port[conndata->connid]);
-
-	if(streamrelay_client[conndata->connid] && !cfg.stream_reuse_client && !streamrelay_client[conndata->connid]->kill_started)
-	{
-		cs_disconnect_client(streamrelay_client[conndata->connid]);
-		free_client(streamrelay_client[conndata->connid]);
-	}
+	cs_log("Stream client %i disconnected",conndata->connid);
 
 	NULLFREE(conndata);
-}
-
-static void streamrelay_auth_client(struct s_client *cl)
-{
-	int32_t ok = 0;
-	struct s_auth *account;
-
-	for(account = cfg.account; cfg.stream_relay_user && account; account = account->next)
-	{
-		if((ok = streq(cfg.stream_relay_user, account->usr)))
-		{
-			break;
-		}
-	}
-
-	cs_auth_client(cl, ok ? account : (struct s_auth *)(-1), "streamrelay");
-}
-
-static void create_streamrelay_client(stream_client_conn_data *conndata)
-{
-	int32_t i, exists = 0;
-
-	if (cfg.stream_reuse_client)
-	{
-		for (i = 0; i < STREAM_SERVER_MAX_CONNECTIONS; i++)
-		{
-			if (streamrelay_client[i])
-			{
-				if (!streamrelay_client[i]->kill)
-				{
-					streamrelay_client[conndata->connid] = streamrelay_client[i];
-					exists = 1;
-					break;
-				}
-			}
-		}
-	}
-
-	if (!exists)
-		{ streamrelay_client[conndata->connid] = create_client(client_ip[conndata->connid]); }
-
-	streamrelay_client[conndata->connid]->typ = 'c';
-	streamrelay_client[conndata->connid]->module_idx = mod_idx;
-	streamrelay_client[conndata->connid]->thread = pthread_self();
-	streamrelay_client[conndata->connid]->ip = client_ip[conndata->connid];
-	streamrelay_client[conndata->connid]->port = client_port[conndata->connid];
-#ifdef WEBIF
-	streamrelay_client[conndata->connid]->wihidden = cfg.stream_hide_client;
-#endif
 }
 
 static void *stream_client_handler(void *arg)
@@ -870,35 +1501,34 @@ static void *stream_client_handler(void *arg)
 	stream_client_data *data;
 
 	char *http_buf, stream_path[255], stream_path_copy[255];
-	char *saveptr, *token, http_version[4], http_host[256];
+	char *saveptr, *token, http_version[4];
 
 	int8_t streamConnectErrorCount = 0, streamDataErrorCount = 0, streamReconnectCount = 0;
 	int32_t bytesRead = 0, http_status_code = 0;
-	int32_t i, clientStatus, streamStatus, streamfd, last_streamfd = 0;
+	int32_t i, clientStatus, streamStatus, streamfd;
 
 	uint8_t *stream_buf;
 	uint16_t packetCount = 0, packetSize = 0, startOffset = 0;
 	uint32_t remainingDataPos, remainingDataLength, tmp_pids[4];
 	uint8_t descrambling = 0;
-
-	struct timeb start, end;
-
+#ifdef WITH_EMU
+	int32_t cur_dvb_buffer_size, cur_dvb_buffer_wait;
+#else
 	const int32_t cur_dvb_buffer_size = DVB_BUFFER_SIZE_CSA;
 	const int32_t cur_dvb_buffer_wait = DVB_BUFFER_WAIT_CSA;
-
+#endif
 	struct dvbcsa_bs_batch_s *tsbbatch;
 
-	create_streamrelay_client(conndata);
-	SAFE_SETSPECIFIC(getclient, streamrelay_client[conndata->connid]);
+	struct s_client *cl = create_client(get_null_ip());
+	if(cl)
+	{
+		SAFE_SETSPECIFIC(getclient, cl);
+		cl->typ = 'c';
+		free_client(cl);
+	}
 	set_thread_name(__func__);
 
-	if(!streamrelay_client[conndata->connid]->init_done)
-	{
-		streamrelay_auth_client(streamrelay_client[conndata->connid]);
-		streamrelay_client[conndata->connid]->init_done = 1;
-	}
-
-	cs_log("Stream client %i connected. ip=%s port=%d", conndata->connid, cs_inet_ntoa(client_ip[conndata->connid]), client_port[conndata->connid]);
+	cs_log("Stream client %i connected", conndata->connid);
 
 	if (!cs_malloc(&http_buf, 1024))
 	{
@@ -922,8 +1552,6 @@ static void *stream_client_handler(void *arg)
 	}
 
 	clientStatus = recv(conndata->connfd, http_buf, 1024, 0);
-	cs_log_dbg(D_CLIENT, "HTTP (recv) (%i): %s", clientStatus, remove_newline_chars(http_buf));
-
 	if (clientStatus < 1)
 	{
 		NULLFREE(http_buf);
@@ -934,32 +1562,13 @@ static void *stream_client_handler(void *arg)
 	}
 
 	http_buf[1023] = '\0';
-	if (sscanf(http_buf, "GET %254s HTTP/%3s Host: %255s ", stream_path, http_version, http_host) < 1)
+	if (sscanf(http_buf, "GET %254s ", stream_path) < 1)
 	{
 		NULLFREE(http_buf);
 		NULLFREE(stream_buf);
 		NULLFREE(data);
 		stream_client_disconnect(conndata);
 		return NULL;
-	}
-	else
-	{
-		//use stream_source_host variable from config as stream source host
-		if(!cfg.stream_client_source_host)
-		{
-			cs_strncpy(conndata->stream_host, cfg.stream_source_host, sizeof(conndata->stream_host));
-		}
-		//use host from stream client http request as stream source host, if 'Host: host:port' header was send
-		else if(strchr(http_host,':'))
-		{
-			char *hostline = cs_strdup((const char *)&http_host);
-			cs_strncpy(conndata->stream_host, strsep(&hostline, ":"), sizeof(conndata->stream_host));
-		}
-		//use the IP address of the stream client itself as host for the stream source
-		else
-		{
-			cs_strncpy(conndata->stream_host, cs_inet_ntoa(client_ip[conndata->connid]), sizeof(conndata->stream_host));
-		}
 	}
 
 	cs_strncpy(stream_path_copy, stream_path, sizeof(stream_path));
@@ -995,9 +1604,16 @@ static void *stream_client_handler(void *arg)
 		stream_client_disconnect(conndata);
 		return NULL;
 	}
-
+#ifndef WITH_EMU
 	key_data[conndata->connid].key[ODD]  = dvbcsa_bs_key_alloc();
 	key_data[conndata->connid].key[EVEN] = dvbcsa_bs_key_alloc();
+#else
+	for (i = 0; i < EMU_STREAM_MAX_AUDIO_SUB_TRACKS + 2; i++)
+	{
+		key_data[conndata->connid].key[i][ODD]  = dvbcsa_bs_key_alloc();
+		key_data[conndata->connid].key[i][EVEN] = dvbcsa_bs_key_alloc();
+	}
+#endif
 
 	if (!cs_malloc(&tsbbatch, (cluster_size + 1) * sizeof(struct dvbcsa_bs_batch_s)))
 	{
@@ -1010,20 +1626,18 @@ static void *stream_client_handler(void *arg)
 
 	SAFE_MUTEX_LOCK(&fixed_key_srvid_mutex);
 	stream_cur_srvid[conndata->connid] = data->srvid;
+#ifdef WITH_EMU
+	stream_server_has_ecm[conndata->connid] = 0;
+#endif
 	SAFE_MUTEX_UNLOCK(&fixed_key_srvid_mutex);
 
-	cs_log("Stream client %i request. host=%s port=%d path=%s (%s)", conndata->connid, conndata->stream_host, cfg.stream_source_port, stream_path, !cfg.stream_client_source_host ? "config" : strchr(http_host,':') ? "http header" : "client ip");
+	cs_log("Stream client %i request %s", conndata->connid, stream_path);
 
 	cs_log_dbg(D_READER, "Stream client %i received srvid: %04X tsid: %04X onid: %04X ens: %08X",
 				conndata->connid, data->srvid, data->tsid, data->onid, data->ens);
 
-	snprintf(http_buf, 1024,
-			"HTTP/1.0 200 OK\n"
-			"Connection: Close\n"
-			"Content-Type: video/mpeg\n"
-			"Server: stream_enigma2\n\n");
+	snprintf(http_buf, 1024, "HTTP/1.0 200 OK\nConnection: Close\nContent-Type: video/mpeg\nServer: stream_enigma2\n\n");
 	clientStatus = send(conndata->connfd, http_buf, cs_strlen(http_buf), 0);
-	cs_log_dbg(D_CLIENT, "HTTP (send) (%i): %s", clientStatus, remove_newline_chars(http_buf));
 
 	data->connid = conndata->connid;
 	data->caid = NO_CAID_VALUE;
@@ -1032,14 +1646,17 @@ static void *stream_client_handler(void *arg)
 	data->have_cat_data = 0;
 	data->have_ecm_data = 0;
 	data->have_emm_data = 0;
+#ifdef WITH_EMU
+	data->reset_key_data = 1;
+#endif
 
 	while (!exit_oscam && clientStatus != -1 && streamConnectErrorCount < 3
 			&& streamDataErrorCount < 15)
 	{
-		streamfd = connect_to_stream(http_buf, 1024, stream_path, conndata->stream_host, &stream_host_ip[conndata->connid]);
+		streamfd = connect_to_stream(http_buf, 1024, stream_path);
 		if (streamfd == -1)
 		{
-			cs_log("WARNING: stream client %i - cannot connect to stream source host. ip=%s port=%d path=%s", conndata->connid, cs_inet_ntoa(stream_host_ip[conndata->connid]), cfg.stream_source_port, stream_path);
+			cs_log("WARNING: stream client %i cannot connect to stream source", conndata->connid);
 			streamConnectErrorCount++;
 			cs_sleepms(500);
 			continue;
@@ -1053,35 +1670,28 @@ static void *stream_client_handler(void *arg)
 				&& (streamConnectErrorCount < 3 || streamDataErrorCount < 15))
 #endif
 		{
-			if(!streamrelay_client[conndata->connid] || streamrelay_client[conndata->connid]->kill)
+#ifdef WITH_EMU
+			if (data->key.csa_used)
 			{
-				clientStatus = -1;
-				break;
+				cur_dvb_buffer_size = EMU_DVB_BUFFER_SIZE_CSA;
+				cur_dvb_buffer_wait = EMU_DVB_BUFFER_WAIT_CSA;
 			}
-
-			cs_ftime(&start);
+			else
+			{
+				cur_dvb_buffer_size = EMU_DVB_BUFFER_SIZE_DES;
+				cur_dvb_buffer_wait = EMU_DVB_BUFFER_WAIT_DES;
+			}
+#endif
 			streamStatus = recv(streamfd, stream_buf + bytesRead, cur_dvb_buffer_size - bytesRead, MSG_WAITALL);
 			if (streamStatus == 0) // socket closed
 			{
-				cs_log_dbg(D_CLIENT, "STATUS: streamStatus=%i, streamfd=%i, last_streamfd=%i, streamConnectErrorCount=%i, streamDataErrorCount=%i, bytesRead=%i",
-						streamStatus, streamfd, last_streamfd, streamConnectErrorCount, streamDataErrorCount, bytesRead);
-				if(streamfd == last_streamfd)
-				{
-					cs_log("WARNING: stream client %i - stream source closed connection.", conndata->connid);
-					if(cfg.stream_client_source_host && conndata->stream_host != cfg.stream_source_host && streamDataErrorCount > 0)
-					{
-						cs_strncpy(conndata->stream_host, cfg.stream_source_host, sizeof(conndata->stream_host));
-						cs_log("FALLBACK: stream client %i - try using stream source host from config. host=%s", conndata->connid, conndata->stream_host);
-					}
-				}
-				cs_log_dbg(D_CLIENT, "HTTP (recv) (%i): %s", streamStatus, remove_newline_chars((const char*)stream_buf));
+				cs_log("WARNING: stream client %i - stream source closed connection", conndata->connid);
 				streamConnectErrorCount++;
 				cs_sleepms(100);
 				break;
 			}
 			if (streamStatus < 0) // error
 			{
-				cs_log_dbg(D_CLIENT, "HTTP (recv) (%i): %s", streamStatus, remove_newline_chars((const char*)stream_buf));
 				if ((errno == EWOULDBLOCK) | (errno == EAGAIN))
 				{
 					if(cfg.stream_relay_reconnect_count > 0)
@@ -1096,13 +1706,13 @@ static void *stream_client_handler(void *arg)
 					}
 					else
 					{
-						cs_log("WARNING: stream client %i no data from stream source.", conndata->connid);
+						cs_log("WARNING: stream client %i no data from stream source", conndata->connid);
 					}
 					streamDataErrorCount++; // 2 sec timeout * 15 = seconds no data -> close
 					cs_sleepms(100);
 					continue;
 				}
-				cs_log("WARNING: stream client %i error receiving data from stream source.", conndata->connid);
+				cs_log("WARNING: stream client %i error receiving data from stream source", conndata->connid);
 				streamConnectErrorCount++;
 				cs_sleepms(100);
 				break;
@@ -1113,15 +1723,14 @@ static void *stream_client_handler(void *arg)
 					sscanf((const char*)stream_buf, "HTTP/%3s %d ", http_version , &http_status_code) == 2 &&
 					http_status_code != 200)
 				{
-					cs_log_dbg(D_CLIENT, "HTTP (recv) (%i): %s", streamStatus, remove_newline_chars((const char*)stream_buf));
-					cs_log("ERROR: stream client %i got %d response from stream source!", conndata->connid, http_status_code);
+					cs_log("ERROR: stream client %i got %d response from stream source", conndata->connid, http_status_code);
 					streamConnectErrorCount++;
 					cs_sleepms(100);
 					break;
 				}
 				else
 				{
-					cs_log_dbg(0, "WARNING: stream client %i non-full buffer from stream source.", conndata->connid);
+					cs_log_dbg(0, "WARNING: stream client %i non-full buffer from stream source", conndata->connid);
 					streamDataErrorCount++;
 					cs_sleepms(100);
 				}
@@ -1155,17 +1764,34 @@ static void *stream_client_handler(void *arg)
 					// We have both PAT and PMT data - We can start descrambling
 					if (data->have_pat_data == 1 && data->have_pmt_data == 1)
 					{
-						if (chk_ctab_ex(data->caid, &cfg.stream_relay_ctab) && (data->caid != 0xA101 || data->caid == NO_CAID_VALUE))
+						if (chk_ctab_ex(data->caid, &cfg.stream_relay_ctab))
 						{
+#ifdef WITH_EMU
+							if (caid_is_powervu(data->caid))
+							{
+								DescrambleTsPacketsPowervu(data, stream_buf + startOffset, packetCount * packetSize, packetSize, tsbbatch);
+							}
+							else if (data->caid == 0xA101) // Rosscrypt1
+							{
+								DescrambleTsPacketsRosscrypt1(data, stream_buf + startOffset, packetCount * packetSize, packetSize);
+							}
+							else if (data->caid == NO_CAID_VALUE) // Compel
+							{
+								DescrambleTsPacketsCompel(data, stream_buf + startOffset, packetCount * packetSize, packetSize);
+							}
+							else
+#endif // WITH_EMU
+							{
 								DescrambleTsPackets(data, stream_buf + startOffset, packetCount * packetSize, packetSize, tsbbatch);
 								if (!descrambling && cfg.stream_relay_buffer_time) {
 									cs_sleepms(cfg.stream_relay_buffer_time);
 									descrambling = 1;
 								}
+							}
 						}
 						else
 						{
-							cs_log("Stream client %i caid %04X not enabled in stream relay config",
+							cs_log_dbg(D_READER, "Stream client %i caid %04X not enabled in stream relay config",
 										conndata->connid, data->caid);
 						}
 					}
@@ -1191,19 +1817,23 @@ static void *stream_client_handler(void *arg)
 					bytesRead = remainingDataLength;
 				}
 			}
-			cs_ftime(&end);
-			stream_resptime[conndata->connid] = comp_timeb(&end, &start);
 		}
 
-		last_streamfd = streamfd;
 		close(streamfd);
 	}
 
 	NULLFREE(http_buf);
 	NULLFREE(stream_buf);
-
+#ifndef WITH_EMU
 	dvbcsa_bs_key_free(key_data[conndata->connid].key[ODD]);
 	dvbcsa_bs_key_free(key_data[conndata->connid].key[EVEN]);
+#else
+	for (i = 0; i < EMU_STREAM_MAX_AUDIO_SUB_TRACKS + 2; i++)
+	{
+		dvbcsa_bs_key_free(key_data[conndata->connid].key[i][ODD]);
+		dvbcsa_bs_key_free(key_data[conndata->connid].key[i][EVEN]);
+	}
+#endif
 	NULLFREE(tsbbatch);
 
 	NULLFREE(data);
@@ -1212,41 +1842,26 @@ static void *stream_client_handler(void *arg)
 	return NULL;
 }
 
-static void *stream_server(void)
+static void *stream_server(void *cl)
 {
-#ifdef IPV6SUPPORT
-	struct sockaddr_in6 servaddr, cliaddr;
-#else
 	struct sockaddr_in servaddr, cliaddr;
-#endif
 	socklen_t clilen;
 	int32_t connfd, reuse = 1, i;
 	int8_t connaccepted;
 	stream_client_conn_data *conndata;
 
-	struct s_client *client = first_client;
-	client->thread = pthread_self();
-	SAFE_SETSPECIFIC(getclient, client);
+	SAFE_SETSPECIFIC(getclient, cl);
 	set_thread_name(__func__);
 
 	cluster_size = dvbcsa_bs_batch_size();
-	has_dvbcsa_ecm = (DVBCSA_HEADER_ECM);
-#if !DVBCSA_KEY_ECM
-#pragma message "WARNING: Streamrelay is compiled without dvbcsa ecm headers! ECM processing via Streamrelay will not work!"
-#endif
-#if !STATIC_LIBDVBCSA
-	has_dvbcsa_ecm = (dlsym(RTLD_DEFAULT, "dvbcsa_bs_key_set_ecm"));
-	is_dvbcsa_static = 0;
-#endif
 
-	cs_log("%s: (%s) %s dvbcsa parallel mode = %d (relay buffer time: %d ms)%s%s",
-		(!DVBCSA_HEADER_ECM || !has_dvbcsa_ecm) ? "WARNING" : "INFO",
-		(!has_dvbcsa_ecm) ? "wrong" : "ecm",
-		(!is_dvbcsa_static) ? "dynamic" : "static",
-		cluster_size,
-		cfg.stream_relay_buffer_time,
-		(!DVBCSA_HEADER_ECM || !has_dvbcsa_ecm) ? "! ECM processing via Streamrelay does not work!" : "",
-		(!DVBCSA_HEADER_ECM) ? " Missing dvbcsa ecm headers during build!" : "");
+#ifdef STATIC_LIBDVBCSA
+	has_dvbcsa_ecm = DVBCSA_KEY_ECM;
+	cs_log("INFO: static dvbcsa%s parallel mode = %d (relay buffer time: %d ms)", (!has_dvbcsa_ecm) ? "" : " (with icam)", cluster_size, cfg.stream_relay_buffer_time);
+#else
+	has_dvbcsa_ecm = (dlsym(RTLD_DEFAULT, "dvbcsa_bs_key_set_ecm"));
+	cs_log("INFO: dynamic dvbcsa%s parallel mode = %d (relay buffer time: %d ms)", (!has_dvbcsa_ecm) ? "" : " (with icam)", cluster_size, cfg.stream_relay_buffer_time);
+#endif
 
 	if (!stream_server_mutex_init)
 	{
@@ -1258,6 +1873,9 @@ static void *stream_server(void)
 	for (i = 0; i < STREAM_SERVER_MAX_CONNECTIONS; i++)
 	{
 		stream_cur_srvid[i] = NO_SRVID_VALUE;
+#ifdef WITH_EMU
+		stream_server_has_ecm[i] = 0;
+#endif
 	}
 	SAFE_MUTEX_UNLOCK(&fixed_key_srvid_mutex);
 
@@ -1265,23 +1883,11 @@ static void *stream_server(void)
 	{
 		gconnfd[i] = -1;
 	}
-#ifdef IPV6SUPPORT
-	glistenfd = socket(AF_INET6, SOCK_STREAM, 0);
-	if (glistenfd == -1)
-	{
-		cs_log("ERROR: cannot create stream server socket! (errno=%d %s)", errno, strerror(errno));
-		return NULL;
-	}
 
-	bzero(&servaddr,sizeof(servaddr));
-	servaddr.sin6_family = AF_INET6;
-	servaddr.sin6_addr = in6addr_any;
-	servaddr.sin6_port = htons(cfg.stream_relay_port);
-#else
 	glistenfd = socket(AF_INET, SOCK_STREAM, 0);
 	if (glistenfd == -1)
 	{
-		cs_log("ERROR: cannot create stream server socket! (errno=%d %s)", errno, strerror(errno));
+		cs_log("ERROR: cannot create stream server socket");
 		return NULL;
 	}
 
@@ -1289,24 +1895,21 @@ static void *stream_server(void)
 	servaddr.sin_family = AF_INET;
 	servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
 	servaddr.sin_port = htons(cfg.stream_relay_port);
-#endif
 	setsockopt(glistenfd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
 
 	if (bind(glistenfd,(struct sockaddr *)&servaddr, sizeof(servaddr)) == -1)
 	{
-		cs_log("ERROR: cannot bind to stream server socket! (errno=%d %s)", errno, strerror(errno));
+		cs_log("ERROR: cannot bind to stream server socket");
 		close(glistenfd);
 		return NULL;
 	}
 
 	if (listen(glistenfd, 3) == -1)
 	{
-		cs_log("ERROR: cannot listen to stream server socket! (errno=%d %s)", errno, strerror(errno));
+		cs_log("ERROR: cannot listen to stream server socket");
 		close(glistenfd);
 		return NULL;
 	}
-
-	cs_log("Stream Relay server initialized. ip=%s port=%d", cs_inet_ntoa(SIN_GET_ADDR(servaddr)), ntohs(SIN_GET_PORT(servaddr)));
 
 	while (!exit_oscam)
 	{
@@ -1315,11 +1918,23 @@ static void *stream_server(void)
 
 		if (connfd == -1)
 		{
-			cs_log("ERROR: Calling accept() failed! (errno=%d %s)", errno, strerror(errno));
+			cs_log("ERROR: accept() failed");
 			break;
 		}
 
 		connaccepted = 0;
+
+#ifdef MODULE_RADEGAST
+		if(cfg.stream_client_source_host)
+		{
+			// Read ip of client who wants to play the stream
+			unsigned char *ip = (unsigned char *)&cliaddr.sin_addr.s_addr;
+			cs_log("Stream Client ip is: %d.%d.%d.%d, will fetch stream there\n", ip[0], ip[1], ip[2], ip[3]);
+
+			// Store ip of client in stream_source_host variable
+			snprintf(stream_source_host, sizeof(stream_source_host), "%d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
+		}
+#endif
 
 		if (cs_malloc(&conndata, sizeof(stream_client_conn_data)))
 		{
@@ -1330,15 +1945,13 @@ static void *stream_server(void)
 				{
 					if (gconnfd[i] == -1)
 					{
-						cs_strncpy(ecm_src[i], "dvbapi", sizeof(ecm_src[i]));
 						gconnfd[i] = connfd;
 						gconncount++;
 						connaccepted = 1;
 
 						conndata->connfd = connfd;
 						conndata->connid = i;
-						client_ip[i] = SIN_GET_ADDR(cliaddr);
-						client_port[i] = ntohs(SIN_GET_PORT(cliaddr));
+
 						break;
 					}
 				}
@@ -1351,7 +1964,7 @@ static void *stream_server(void)
 			int on = 1;
 			if (setsockopt(connfd, IPPROTO_TCP, TCP_NODELAY, &on, sizeof(on)) < 0)
 			{
-				cs_log("ERROR: stream client %i setsockopt() failed for TCP_NODELAY!", conndata->connid);
+				cs_log("ERROR: stream client %i setsockopt() failed for TCP_NODELAY", conndata->connid);
 			}
 
 			start_thread("stream client", stream_client_handler, (void*)conndata, NULL, 1, 0);
@@ -1360,7 +1973,7 @@ static void *stream_server(void)
 		{
 			shutdown(connfd, 2);
 			close(connfd);
-			cs_log("ERROR: stream server client dropped because of too many connections (%i)!", STREAM_SERVER_MAX_CONNECTIONS);
+			cs_log("ERROR: stream server client dropped because of too many connections (%i)", STREAM_SERVER_MAX_CONNECTIONS);
 		}
 
 		cs_sleepms(20);
@@ -1371,23 +1984,100 @@ static void *stream_server(void)
 	return NULL;
 }
 
-void *streamrelay_handler(struct s_client *UNUSED(cl), uint8_t *UNUSED(mbuf), int32_t module_idx)
+void init_stream_server(void)
 {
 	char authtmp[128];
 
 	if (cfg.stream_relay_enabled)
 	{
+		cs_strncpy(stream_source_host, cfg.stream_source_host, sizeof(stream_source_host));
 
 		if (cfg.stream_source_auth_user && cfg.stream_source_auth_password)
 		{
 			snprintf(authtmp, sizeof(authtmp), "%s:%s", cfg.stream_source_auth_user, cfg.stream_source_auth_password);
 			b64encode(authtmp, cs_strlen(authtmp), &stream_source_auth);
 		}
-		mod_idx = module_idx;
-		start_thread("stream_server", stream_server, NULL, NULL, 1, 1);
+#ifdef WITH_EMU
+		emu_stream_emm_enabled = cfg.emu_stream_emm_enabled;
+#endif
+		struct s_client *cl = cur_client();
+		if (start_thread("stream_server", stream_server, (void *)cl, NULL, 1, 1) == 0)
+		{
+			cs_log("Stream Relay server initialized");
+		}
+
 	}
+}
+
+#if WITH_EMU
+void *stream_key_delayer(void *UNUSED(arg))
+{
+	int32_t i, j;
+	emu_stream_client_key_data *cdata;
+	LL_ITER it;
+	emu_stream_cw_item *item;
+	struct timeb t_now;
+
+	while (!exit_oscam)
+	{
+		cs_ftime(&t_now);
+
+		for (i = 0; i < STREAM_SERVER_MAX_CONNECTIONS; i++)
+		{
+			it = ll_iter_create(ll_emu_stream_delayed_keys[i]);
+
+			while ((item = ll_iter_next(&it)))
+			{
+				if (comp_timeb(&t_now, &item->write_time) < 0)
+				{
+					break;
+				}
+
+				SAFE_MUTEX_LOCK(&emu_fixed_key_data_mutex[i]);
+
+				cdata = &emu_fixed_key_data[i];
+
+				for (j = 0; j < EMU_STREAM_MAX_AUDIO_SUB_TRACKS + 2; j++)
+				{
+					if (item->csa_used)
+					{
+						if (item->is_even)
+						{
+							dvbcsa_bs_key_set(item->cw[j], key_data[cdata->connid].key[j][EVEN]);
+						}
+						else
+						{
+							dvbcsa_bs_key_set(item->cw[j], key_data[cdata->connid].key[j][ODD]);
+						}
+
+						cdata->csa_used = 1;
+					}
+					else
+					{
+						if (item->is_even)
+						{
+							des_set_key(item->cw[j], cdata->pvu_des_ks[j][0]);
+						}
+						else
+						{
+							des_set_key(item->cw[j], cdata->pvu_des_ks[j][1]);
+						}
+
+						cdata->csa_used = 0;
+					}
+				}
+				SAFE_MUTEX_UNLOCK(&emu_fixed_key_data_mutex[i]);
+
+				ll_iter_remove_data(&it);
+			}
+		}
+
+		cs_sleepms(25);
+	}
+
 	return NULL;
 }
+#endif
 
 void stop_stream_server(void)
 {
@@ -1413,17 +2103,6 @@ void stop_stream_server(void)
 
 	shutdown(glistenfd, 2);
 	close(glistenfd);
-
-	NULLFREE(stream_source_auth);
 }
 
-/*
- * protocol structure
- */
-void module_streamrelay(struct s_module *ph)
-{
-	ph->desc = "streamrelay";
-	ph->type = MOD_CONN_SERIAL;
-	ph->s_handler = streamrelay_handler;
-}
 #endif // MODULE_STREAMRELAY

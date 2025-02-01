@@ -4,7 +4,7 @@
  * dvbapi-support for Matrix Cam Air
  *
  * The code is based partially on module-dvbapi-azbox.
- * the (closed source) oscam that comes with the MCA is
+ * the (closed source) ncam that comes with the MCA is
  * apparently based on svn-revision 5124-5242.
  * DEMUXMATRIX is essentially the old DEMUXTYPE which
  * has changed since then.
@@ -26,11 +26,11 @@
 
 #include "module-dvbapi.h"
 #include "module-dvbapi-mca.h"
-#include "oscam-client.h"
-#include "oscam-ecm.h"
-#include "oscam-reader.h"
-#include "oscam-string.h"
-#include "oscam-time.h"
+#include "ncam-client.h"
+#include "ncam-ecm.h"
+#include "ncam-reader.h"
+#include "ncam-string.h"
+#include "ncam-time.h"
 
 int8_t dummy(void)
 {
@@ -439,7 +439,7 @@ static void *mca_main_thread(void *cli)
 				openxcas_data_pid = chan.d_pid;
 				break;
 			case OPENXCAS_START_PMT_ECM:
-				//FIXME: Apparently this is what the original MCA-oscam does
+				//FIXME: Apparently this is what the original MCA-ncam does
 				cs_log_dbg(D_DVBAPI, "OPENXCAS_STOP_PMT_ECM");
 				memset(&demux, 0, sizeof(demux));
 				memset(&found, 0, sizeof(found));
@@ -601,8 +601,10 @@ void mca_send_dcw(struct s_client *client, ECM_REQUEST *er)
 	int32_t n;
 	for(n = 0; n < 2; n++)
 	{
+		// Skip check for BISS1 - cw could be indeed zero
+		// Skip check for BISS2 - we use the extended cw, so the "simple" cw is always zero
 		if((memcmp(er->cw + (n * 8), demux[0].last_cw[0][0], 8) && memcmp(er->cw + (n * 8), demux[0].last_cw[0][1], 8))
-			&& (memcmp(er->cw + (n * 8), nullcw, 8) != 0))
+			&& (memcmp(er->cw + (n * 8), nullcw, 8) != 0 || caid_is_biss(er->caid)))
 		{
 			memcpy(demux[0].last_cw[0][n], er->cw + (n * 8), 8);
 			memcpy(openxcas_cw + (n * 8), er->cw + (n * 8), 8);

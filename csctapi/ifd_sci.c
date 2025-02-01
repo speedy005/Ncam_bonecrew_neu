@@ -7,13 +7,13 @@
 
 #ifdef CARDREADER_INTERNAL_SCI
 
-#include "../oscam-time.h"
+#include "../ncam-time.h"
 
 #include "atr.h"
 #include "ifd_sci_global.h"
 #include "ifd_sci_ioctl.h"
 #include "io_serial.h"
-#include "../oscam-string.h"
+#include "../ncam-string.h"
 
 #define OK      0
 #define ERROR 1
